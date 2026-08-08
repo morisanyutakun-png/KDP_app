@@ -1,0 +1,22 @@
+import Link from "next/link";
+import { AdminPageHeader, BarList, MetricCard } from "@/components/admin-ui";
+import { formatLabels } from "@/lib/constants";
+import { getDashboardData } from "@/lib/data/dashboard";
+import { formatDate, formatNumber } from "@/lib/utils";
+
+export const dynamic = "force-dynamic";
+
+export default async function DashboardPage() {
+  const data = await getDashboardData();
+  const totalClicks = data.clicks.reduce((sum, row) => sum + Number(row.clicks), 0);
+  const totalImported = data.recentImports.reduce((sum, row) => sum + row.importedRows, 0);
+  return <>
+    <AdminPageHeader eyebrow="OVERVIEW" title="売上ダッシュボード" description="KDP売上とAmazonへの送客状況をまとめて確認できます。" action={<div className="flex gap-2"><Link href="/admin/imports" className="btn-secondary">CSV取込</Link><Link href="/admin/materials/new" className="btn-primary">教材を登録</Link></div>} />
+    <div className="space-y-7 p-5 sm:p-8">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"><MetricCard label="今月の販売冊数" value={data.currentMonthUnits} note="CSV取込済みデータ" tone="teal" /><MetricCard label="Amazonクリック（累計）" value={totalClicks} note="購入ボタンのクリック" tone="orange" /><MetricCard label="未登録ASIN" value={data.unmatched.length} note="紐付け待ち" tone="blue" /><MetricCard label="直近5取込の新規行" value={totalImported} note="重複行を除外" /></div>
+      <div className="grid gap-6 xl:grid-cols-2"><section className="card p-5 sm:p-6"><h2 className="mb-5 text-lg font-black text-navy">月別販売冊数</h2><BarList rows={data.monthly} /></section><section className="card p-5 sm:p-6"><h2 className="mb-5 text-lg font-black text-navy">商品別売上</h2><BarList rows={data.products} /></section></div>
+      <div className="grid gap-6 lg:grid-cols-3"><section className="card p-5"><h2 className="mb-5 font-black text-navy">大学別売上</h2><BarList rows={data.universities} /></section><section className="card p-5"><h2 className="mb-5 font-black text-navy">科目別売上</h2><BarList rows={data.subjects} /></section><section className="card p-5"><h2 className="mb-5 font-black text-navy">シリーズ別売上</h2><BarList rows={data.series} /></section></div>
+      <div className="grid gap-6 xl:grid-cols-2"><section className="card overflow-hidden"><div className="border-b border-line p-5"><h2 className="font-black text-navy">Amazon送客</h2><p className="mt-1 text-xs text-muted">個人情報を保存せずクリック数のみ集計</p></div><div className="divide-y divide-line">{data.clicks.length ? data.clicks.map((row, index) => <div key={`${row.label}-${row.format}-${index}`} className="flex items-center justify-between gap-4 p-4 text-sm"><span className="truncate"><strong className="text-navy">{row.label}</strong><span className="ml-2 text-xs text-muted">{formatLabels[row.format]}</span></span><span className="font-black text-brand-orange">{formatNumber(row.clicks)} click</span></div>) : <div className="p-8 text-center text-sm text-muted">クリックデータはまだありません</div>}</div></section><section className="card overflow-hidden"><div className="flex items-center justify-between border-b border-line p-5"><h2 className="font-black text-navy">最近のCSV取込</h2><Link href="/admin/imports" className="text-xs font-bold text-brand-blue">詳細 →</Link></div><div className="divide-y divide-line">{data.recentImports.length ? data.recentImports.map((item) => <div key={item.id} className="flex items-center justify-between gap-3 p-4 text-sm"><span className="min-w-0"><strong className="block truncate text-navy">{item.originalFilename}</strong><span className="mt-1 block text-xs text-muted">{formatDate(item.createdAt)}</span></span><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${item.status === "COMPLETED" ? "bg-teal-50 text-teal" : item.status === "FAILED" ? "bg-red-50 text-red-700" : "bg-blue-50 text-brand-blue"}`}>{item.status}</span></div>) : <div className="p-8 text-center text-sm text-muted">取込履歴はまだありません</div>}</div></section></div>
+    </div>
+  </>;
+}
