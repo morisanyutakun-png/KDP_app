@@ -69,6 +69,8 @@ npm run auth:hash -- '十分に長い管理者パスワード'
 
 出力されたbcrypt文字列全体を `ADMIN_PASSWORD_HASH` に設定します。管理者メールアドレスやパスワードの実値はリポジトリに含まれていません。
 
+Vercel Dashboardには `$2b$...` をそのまま貼り付けます。ローカルの `.env.local` ではNext.jsによる変数展開を避けるため、`\$2b\$12\$...` のように各 `$` をバックスラッシュでエスケープしてください。
+
 ## Neonの設定とDBセットアップ
 
 1. NeonでProjectとDatabaseを作成します。

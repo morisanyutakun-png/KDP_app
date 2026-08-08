@@ -2,7 +2,9 @@
   "name": "kdp-catalog-mvp",
   "version": "0.1.0",
   "private": true,
-  "engines": { "node": ">=20.9.0" },
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -16,6 +18,7 @@
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
+    "@next/env": "^16.3.0",
     "@vercel/blob": "^2.7.0",
     "bcryptjs": "^3.0.3",
     "date-fns": "^4.4.0",
