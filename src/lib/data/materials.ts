@@ -182,7 +182,13 @@ export async function listAdminMaterials() {
     .leftJoin(materialEditions, eq(materialEditions.materialId, materials.id))
     .groupBy(materials.id, universities.id, subjects.id, series.id)
     .orderBy(desc(materials.updatedAt));
-  return rows;
+  const editionRows = rows.length ? await db.select({ materialId: materialEditions.materialId, asin: materialEditions.asin })
+    .from(materialEditions)
+    .where(inArray(materialEditions.materialId, rows.map((row) => row.id))) : [];
+  return rows.map((row) => ({
+    ...row,
+    asins: editionRows.filter((edition) => edition.materialId === row.id).map((edition) => edition.asin).filter(Boolean),
+  }));
 }
 
 export async function getAdminMaterial(id: string) {

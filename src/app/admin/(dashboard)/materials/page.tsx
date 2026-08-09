@@ -26,7 +26,7 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
         {items.length ? <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-sm">
           <thead className="bg-surface text-xs text-muted"><tr><th className="px-5 py-3 font-bold">教材</th><th className="px-4 py-3 font-bold">分類</th><th className="px-4 py-3 font-bold">制作状況</th><th className="px-4 py-3 font-bold">KDP</th><th className="px-4 py-3 font-bold">公開</th><th className="px-4 py-3 font-bold">更新日</th><th className="px-5 py-3" /></tr></thead>
           <tbody className="divide-y divide-line">{items.map((item) => <tr key={item.id} className="hover:bg-slate-50/60">
-            <td className="px-5 py-4"><strong className="block max-w-xs truncate text-navy">{item.title}</strong><span className="mt-1 block text-xs text-muted">販売形式 {item.editionCount}</span></td>
+            <td className="px-5 py-4"><strong className="block max-w-xs truncate text-navy">{item.title}</strong><span className="mt-1 block text-xs text-muted">{item.asins.length ? `ASIN: ${item.asins.join(", ")}` : `販売形式 ${item.editionCount}`}</span></td>
             <td className="px-4 py-4 text-xs text-muted"><span className="block">{item.universityName || "大学未設定"}</span><span className="mt-1 block">{item.subjectName || "科目未設定"}</span></td>
             <td className="px-4 py-4"><span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-brand-blue">{productionStatusLabels[item.productionStatus]}</span></td>
             <td className="px-4 py-4 text-xs font-bold text-muted">{kdpStatusLabels[item.kdpStatus]}</td>
