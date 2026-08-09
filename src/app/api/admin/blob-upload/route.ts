@@ -7,6 +7,7 @@ const rules = {
   cover: { types: ["image/jpeg", "image/png", "image/webp", "image/avif"], max: 10 * 1024 * 1024, prefix: "materials/covers/" },
   sample: { types: ["application/pdf"], max: 50 * 1024 * 1024, prefix: "materials/samples/" },
   csv: { types: ["text/csv", "application/csv", "text/plain", "application/vnd.ms-excel"], max: 50 * 1024 * 1024, prefix: "imports/kdp/" },
+  "problem-image": { types: ["image/jpeg", "image/png", "image/webp", "image/avif", "image/svg+xml"], max: 10 * 1024 * 1024, prefix: "problems/images/" },
 } as const;
 
 export async function POST(request: Request) {

@@ -47,4 +47,24 @@ button, a { -webkit-tap-highlight-color: transparent; }
   .input { @apply min-h-11 w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-brand-blue focus:ring-2 focus:ring-blue-100; }
   .label { @apply mb-1.5 block text-sm font-bold text-navy; }
   .eyebrow { @apply text-xs font-bold uppercase tracking-[0.16em] text-teal; }
+  .workbench { @apply mx-auto w-full max-w-[1600px] p-4 sm:p-6 lg:p-8; }
+  .math-content { @apply text-[15px] leading-8 text-ink; }
+  .math-content p { @apply my-3 whitespace-pre-wrap; }
+  .math-content h1 { @apply mt-6 mb-3 text-2xl font-black text-navy; }
+  .math-content h2 { @apply mt-5 mb-2 text-xl font-black text-navy; }
+  .math-content h3 { @apply mt-4 mb-2 text-lg font-bold text-navy; }
+  .math-content ul { @apply my-3 list-disc pl-6; }
+  .math-content ol { @apply my-3 list-decimal pl-6; }
+  .math-content blockquote { @apply my-4 border-l-4 border-line pl-4 text-muted; }
+  .math-content pre { @apply my-4 overflow-x-auto rounded-xl bg-slate-950 p-4 text-sm text-white; }
+  .math-content code:not(pre code) { @apply rounded bg-slate-100 px-1.5 py-0.5 text-sm; }
+  .math-content img { @apply my-4 max-w-full rounded-lg; }
+}
+
+@media print {
+  @page { margin: 0; }
+  body { background: #fff !important; }
+  .no-print { display: none !important; }
+  .print-shell { margin: 0 !important; padding: 0 !important; background: #fff !important; }
+  .print-page { box-shadow: none !important; margin: 0 auto !important; }
 }

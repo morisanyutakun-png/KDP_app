@@ -24,6 +24,26 @@ export const kdpStatusEnum = pgEnum("kdp_status", kdpStatusValues);
 export const difficultyEnum = pgEnum("difficulty", difficultyValues);
 export const editionFormatEnum = pgEnum("edition_format", formatValues);
 export const importStatusEnum = pgEnum("import_status", ["PROCESSING", "COMPLETED", "FAILED"]);
+export const problemVerificationStatusEnum = pgEnum("problem_verification_status", ["DRAFT", "REVIEWING", "VERIFIED", "NEEDS_REVISION"]);
+export const mockExamStatusEnum = pgEnum("mock_exam_status", ["DRAFT", "READY", "ARCHIVED"]);
+
+export type PaperSettings = {
+  paperSize: "A4" | "B5";
+  fontSize: number;
+  marginMm: number;
+  showPageNumbers: boolean;
+  pageBreakPerProblem: boolean;
+  columns: 1 | 2;
+};
+
+export const defaultPaperSettings: PaperSettings = {
+  paperSize: "B5",
+  fontSize: 11,
+  marginMm: 16,
+  showPageNumbers: true,
+  pageBreakPerProblem: false,
+  columns: 1,
+};
 
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -153,5 +173,81 @@ export const changeLogs = pgTable("change_logs", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [index("change_logs_entity_idx").on(table.entityType, table.entityId)]);
 
+export const problems = pgTable("problems", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  code: text("code").notNull(),
+  subjectId: uuid("subject_id").references(() => subjects.id, { onDelete: "set null" }),
+  field: text("field").notNull(),
+  subfield: text("subfield"),
+  difficulty: integer("difficulty").notNull(),
+  targetUniversity: text("target_university"),
+  estimatedMinutes: integer("estimated_minutes").notNull(),
+  statement: text("statement").notNull(),
+  answer: text("answer").default("").notNull(),
+  explanation: text("explanation").default("").notNull(),
+  imageUrl: text("image_url"),
+  verificationStatus: problemVerificationStatusEnum("verification_status").default("DRAFT").notNull(),
+  notes: text("notes"),
+  isArchived: boolean("is_archived").default(false).notNull(),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex("problems_code_uidx").on(table.code),
+  index("problems_subject_idx").on(table.subjectId),
+  index("problems_field_idx").on(table.field),
+  index("problems_difficulty_idx").on(table.difficulty),
+  index("problems_target_university_idx").on(table.targetUniversity),
+  index("problems_verification_idx").on(table.verificationStatus),
+  index("problems_archived_idx").on(table.isArchived),
+]);
+
+export const mockTemplates = pgTable("mock_templates", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: text("name").notNull(),
+  description: text("description"),
+  subjectId: uuid("subject_id").references(() => subjects.id, { onDelete: "set null" }),
+  targetUniversity: text("target_university"),
+  durationMinutes: integer("duration_minutes").notNull(),
+  questionCount: integer("question_count").notNull(),
+  paperSettings: jsonb("paper_settings").$type<PaperSettings>().default(defaultPaperSettings).notNull(),
+  ...timestamps,
+}, (table) => [index("mock_templates_subject_idx").on(table.subjectId)]);
+
+export const mockExams = pgTable("mock_exams", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  title: text("title").notNull(),
+  subjectId: uuid("subject_id").references(() => subjects.id, { onDelete: "set null" }),
+  targetUniversity: text("target_university"),
+  durationMinutes: integer("duration_minutes").notNull(),
+  questionCount: integer("question_count").notNull(),
+  status: mockExamStatusEnum("status").default("DRAFT").notNull(),
+  templateId: uuid("template_id").references(() => mockTemplates.id, { onDelete: "set null" }),
+  paperSettings: jsonb("paper_settings").$type<PaperSettings>().default(defaultPaperSettings).notNull(),
+  ...timestamps,
+}, (table) => [
+  index("mock_exams_subject_idx").on(table.subjectId),
+  index("mock_exams_status_idx").on(table.status),
+]);
+
+export const mockExamItems = pgTable("mock_exam_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  mockExamId: uuid("mock_exam_id").notNull().references(() => mockExams.id, { onDelete: "cascade" }),
+  problemId: uuid("problem_id").references(() => problems.id, { onDelete: "restrict" }),
+  position: integer("position").notNull(),
+  fieldFilter: text("field_filter"),
+  subfieldFilter: text("subfield_filter"),
+  difficultyMin: integer("difficulty_min"),
+  difficultyMax: integer("difficulty_max"),
+  unusedOnly: boolean("unused_only").default(false).notNull(),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex("mock_exam_items_exam_position_uidx").on(table.mockExamId, table.position),
+  index("mock_exam_items_exam_idx").on(table.mockExamId),
+  index("mock_exam_items_problem_idx").on(table.problemId),
+]);
+
 export type Material = typeof materials.$inferSelect;
 export type MaterialEdition = typeof materialEditions.$inferSelect;
+export type Problem = typeof problems.$inferSelect;
+export type MockTemplate = typeof mockTemplates.$inferSelect;
+export type MockExam = typeof mockExams.$inferSelect;
+export type MockExamItem = typeof mockExamItems.$inferSelect;

@@ -5,7 +5,7 @@ import { useState } from "react";
 
 type Props = {
   name: string;
-  kind: "cover" | "sample";
+  kind: "cover" | "sample" | "problem-image";
   label: string;
   accept: string;
   initialUrl?: string | null;
@@ -21,7 +21,8 @@ export function FileUploadField({ name, kind, label, accept, initialUrl }: Props
     setBusy(true); setMessage("アップロード中…");
     try {
       const safeName = file.name.normalize("NFKC").replace(/[^a-zA-Z0-9._-]/g, "-");
-      const result = await upload(`materials/${kind === "cover" ? "covers" : "samples"}/${Date.now()}-${safeName}`, file, {
+      const folder = kind === "cover" ? "materials/covers" : kind === "sample" ? "materials/samples" : "problems/images";
+      const result = await upload(`${folder}/${Date.now()}-${safeName}`, file, {
         access: "public",
         handleUploadUrl: "/api/admin/blob-upload",
         clientPayload: JSON.stringify({ kind }),
