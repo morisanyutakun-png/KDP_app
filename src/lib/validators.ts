@@ -10,6 +10,7 @@ export function materialFromFormData(formData: FormData) {
     title: value(formData, "title"),
     slug: value(formData, "slug"),
     description: value(formData, "description"),
+    problemStructure: value(formData, "problemStructure"),
     university: value(formData, "university"),
     subject: value(formData, "subject"),
     series: value(formData, "series"),

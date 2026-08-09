@@ -57,6 +57,7 @@ export const materials = pgTable("materials", {
   title: text("title").notNull(),
   slug: text("slug").notNull(),
   description: text("description").notNull(),
+  problemStructure: text("problem_structure"),
   universityId: uuid("university_id").references(() => universities.id, { onDelete: "set null" }),
   subjectId: uuid("subject_id").references(() => subjects.id, { onDelete: "set null" }),
   seriesId: uuid("series_id").references(() => series.id, { onDelete: "set null" }),

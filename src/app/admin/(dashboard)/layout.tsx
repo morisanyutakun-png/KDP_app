@@ -8,6 +8,7 @@ export const metadata: Metadata = { title: { default: "管理ダッシュボー�
 const navigation = [
   { href: "/admin", label: "ダッシュボード", icon: "▦" },
   { href: "/admin/materials", label: "教材管理", icon: "▤" },
+  { href: "/admin/materials/import", label: "教材CSV登録", icon: "＋" },
   { href: "/admin/imports", label: "CSV・売上", icon: "↥" },
   { href: "/", label: "公開サイト", icon: "↗" },
 ];

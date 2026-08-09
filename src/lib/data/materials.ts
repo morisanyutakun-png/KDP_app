@@ -20,6 +20,7 @@ function baseMaterialSelect() {
     title: materials.title,
     slug: materials.slug,
     description: materials.description,
+    problemStructure: materials.problemStructure,
     difficulty: materials.difficulty,
     coverUrl: materials.coverUrl,
     samplePdfUrl: materials.samplePdfUrl,
@@ -48,7 +49,11 @@ function materialConditions(filters: CatalogFilters, publishedOnly = true) {
   if (publishedOnly) conditions.push(eq(materials.isPublished, true));
   if (filters.q?.trim()) {
     const keyword = `%${filters.q.trim()}%`;
-    conditions.push(or(ilike(materials.title, keyword), ilike(materials.description, keyword))!);
+    conditions.push(or(
+      ilike(materials.title, keyword),
+      ilike(materials.description, keyword),
+      ilike(materials.problemStructure, keyword),
+    )!);
   }
   if (filters.university) conditions.push(eq(universities.slug, filters.university));
   if (filters.subject) conditions.push(eq(subjects.slug, filters.subject));

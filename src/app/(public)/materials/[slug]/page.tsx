@@ -71,6 +71,7 @@ export default async function MaterialDetailPage({ params }: { params: Promise<{
             <div className="flex flex-wrap gap-2 text-xs font-bold"><span className="rounded-full bg-teal-50 px-3 py-1.5 text-teal">{difficultyLabels[material.difficulty]}</span>{material.seriesName && <Link href={`/catalog?series=${material.seriesSlug}`} className="rounded-full bg-blue-50 px-3 py-1.5 text-brand-blue">{material.seriesName}</Link>}</div>
             <h1 className="mt-5 text-3xl font-black leading-tight tracking-tight text-navy sm:text-4xl lg:text-5xl">{material.title}</h1>
             <p className="mt-6 whitespace-pre-wrap text-base leading-8 text-slate-600">{material.description}</p>
+            {material.problemStructure && <section className="mt-7 rounded-2xl border border-line bg-surface p-5"><h2 className="font-black text-navy">問題構成</h2><p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-600">{material.problemStructure}</p></section>}
 
             <dl className="mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line text-sm sm:grid-cols-3">
               {[
