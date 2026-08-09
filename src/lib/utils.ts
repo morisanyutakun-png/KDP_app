@@ -23,6 +23,11 @@ export function formatNumber(value: number | string | null | undefined) {
   return new Intl.NumberFormat("ja-JP").format(Number(value || 0));
 }
 
+export function formatPrice(amount: number | null | undefined, currency = "JPY") {
+  if (amount === null || amount === undefined) return null;
+  return new Intl.NumberFormat("ja-JP", { style: "currency", currency, maximumFractionDigits: 0 }).format(amount);
+}
+
 export function safeRedirectPath(path: string | null | undefined, fallback = "/admin") {
   return path?.startsWith("/") && !path.startsWith("//") ? path : fallback;
 }

@@ -28,6 +28,8 @@ export function materialFromFormData(formData: FormData) {
       asin: value(formData, `edition.${format}.asin`),
       isbn: value(formData, `edition.${format}.isbn`),
       amazonUrl: value(formData, `edition.${format}.amazonUrl`),
+      priceAmount: value(formData, `edition.${format}.priceAmount`) ? Number(value(formData, `edition.${format}.priceAmount`)) : null,
+      priceCurrency: value(formData, `edition.${format}.priceCurrency`) || "JPY",
       kdpStatus: value(formData, `edition.${format}.kdpStatus`) as (typeof kdpStatusValues)[number],
       isActive: formData.get(`edition.${format}.isActive`) === "on",
     })),

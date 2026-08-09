@@ -15,6 +15,13 @@
       "when": 1786253880560,
       "tag": "0001_remarkable_pretty_boy",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1786254899301,
+      "tag": "0002_purple_nicolaos",
+      "breakpoints": true
     }
   ]
 }

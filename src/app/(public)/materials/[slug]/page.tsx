@@ -5,12 +5,21 @@ import { notFound } from "next/navigation";
 import { MaterialCard } from "@/components/material-card";
 import { difficultyLabels, formatLabels } from "@/lib/constants";
 import { getPublishedMaterial, getRelatedMaterials } from "@/lib/data/materials";
-import { formatDate, siteUrl } from "@/lib/utils";
+import { formatDate, formatPrice, siteUrl } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
+function normalizedSlug(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
-  const { slug } = await params;
+  const { slug: rawSlug } = await params;
+  const slug = normalizedSlug(rawSlug);
   const material = await getPublishedMaterial(slug);
   if (!material) return { title: "教材が見つかりません" };
   const description = material.description.slice(0, 150);
@@ -29,7 +38,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 }
 
 export default async function MaterialDetailPage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = await params;
+  const { slug: rawSlug } = await params;
+  const slug = normalizedSlug(rawSlug);
   const material = await getPublishedMaterial(slug);
   if (!material) notFound();
   const related = await getRelatedMaterials(material);
@@ -52,6 +62,13 @@ export default async function MaterialDetailPage({ params }: { params: Promise<{
       isbn: edition.isbn || undefined,
       sameAs: edition.amazonUrl || undefined,
       identifier: edition.asin ? { "@type": "PropertyValue", propertyID: "ASIN", value: edition.asin } : undefined,
+      offers: edition.amazonUrl && edition.priceAmount !== null ? {
+        "@type": "Offer",
+        url: edition.amazonUrl,
+        price: edition.priceAmount,
+        priceCurrency: edition.priceCurrency,
+        availability: "https://schema.org/InStock",
+      } : undefined,
     })),
   };
 
@@ -83,7 +100,7 @@ export default async function MaterialDetailPage({ params }: { params: Promise<{
             <section className="mt-8" aria-labelledby="formats"><h2 id="formats" className="text-lg font-black text-navy">販売形式</h2>
               {material.editions.length ? <div className="mt-3 space-y-3">{material.editions.map((edition) => (
                 <div key={edition.id} className="card flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
-                  <div><p className="font-black text-navy">{formatLabels[edition.format]}</p><div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">{edition.asin && <span>ASIN: {edition.asin}</span>}{edition.isbn && <span>ISBN: {edition.isbn}</span>}</div></div>
+                  <div><div className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><p className="font-black text-navy">{formatLabels[edition.format]}</p>{edition.priceAmount !== null && <p className="text-xl font-black text-navy">{formatPrice(edition.priceAmount, edition.priceCurrency)}</p>}</div><div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">{edition.asin && <span>ASIN: {edition.asin}</span>}{edition.isbn && <span>ISBN: {edition.isbn}</span>}{edition.priceUpdatedAt && <span>価格確認: {formatDate(edition.priceUpdatedAt)}</span>}</div></div>
                   {edition.amazonUrl && <Link href={`/go/${edition.id}`} prefetch={false} className="btn-amazon shrink-0">Amazonで購入 ↗</Link>}
                 </div>
               ))}</div> : <p className="mt-3 rounded-xl bg-surface p-4 text-sm text-muted">販売形式は準備中です。</p>}

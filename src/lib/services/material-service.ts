@@ -44,6 +44,8 @@ export const materialInputSchema = z.object({
     asin: z.string().trim().max(20).optional().transform((value) => value?.toUpperCase() || null),
     isbn: z.string().trim().max(32).optional().transform((value) => value || null),
     amazonUrl: optionalUrl,
+    priceAmount: z.number().int().min(0).max(100_000_000).nullable(),
+    priceCurrency: z.string().trim().length(3).transform((value) => value.toUpperCase()),
     kdpStatus: z.enum(kdpStatusValues),
     isActive: z.boolean(),
   })),
@@ -114,13 +116,18 @@ export async function saveMaterial(input: MaterialInput) {
       asin: edition.asin,
       isbn: edition.isbn,
       amazonUrl: edition.amazonUrl,
+      priceAmount: edition.priceAmount,
+      priceCurrency: edition.priceCurrency,
+      priceUpdatedAt: edition.priceAmount === null
+        ? existing?.priceUpdatedAt || null
+        : edition.priceAmount === existing?.priceAmount ? existing?.priceUpdatedAt : new Date(),
       kdpStatus: edition.kdpStatus,
       isActive: edition.isActive,
       updatedAt: new Date(),
     };
     if (existing) {
       await db.update(materialEditions).set(editionValues).where(eq(materialEditions.id, existing.id));
-    } else if (edition.asin || edition.isbn || edition.amazonUrl) {
+    } else if (edition.asin || edition.isbn || edition.amazonUrl || edition.priceAmount !== null) {
       await db.insert(materialEditions).values({ materialId: id, format: edition.format, ...editionValues });
     }
   }

@@ -35,6 +35,7 @@ const aliases = {
   difficulty: ["難易度", "difficulty"],
   format: ["販売形式", "形式", "format"],
   amazonUrl: ["amazonurl", "amazon url", "amazon_url", "Amazon URL"],
+  price: ["価格", "price", "amazon価格", "amazonprice"],
   isPublished: ["公開", "published", "isPublished", "is_published"],
 } as const;
 
@@ -139,6 +140,10 @@ export async function importMaterialsCsv(csv: string, defaults: MaterialCsvDefau
       if (rawPublished && publishedValue === null) throw new Error(`公開状態「${rawPublished}」を認識できません`);
       const amazonUrl = field(row, aliases.amazonUrl);
       if (amazonUrl && !/^https:\/\//.test(amazonUrl)) throw new Error("Amazon URLは https:// から入力してください");
+      const rawPrice = field(row, aliases.price);
+      const normalizedPrice = rawPrice.replace(/[￥¥,\s]/g, "");
+      const priceAmount = normalizedPrice ? Number(normalizedPrice) : null;
+      if (priceAmount !== null && (!Number.isInteger(priceAmount) || priceAmount < 0)) throw new Error(`価格「${rawPrice}」の形式が正しくありません`);
 
       let materialId: string | undefined;
       let editionByAsin: typeof materialEditions.$inferSelect | undefined;
@@ -154,7 +159,7 @@ export async function importMaterialsCsv(csv: string, defaults: MaterialCsvDefau
       }
 
       let editionForFormat: typeof materialEditions.$inferSelect | undefined;
-      if (materialId && (asin || amazonUrl)) {
+      if (materialId && (asin || amazonUrl || priceAmount !== null)) {
         [editionForFormat] = await db.select().from(materialEditions)
           .where(and(eq(materialEditions.materialId, materialId), eq(materialEditions.format, formatValue))).limit(1);
         if (!editionByAsin && editionForFormat?.asin && asin && editionForFormat.asin !== asin) {
@@ -203,17 +208,20 @@ export async function importMaterialsCsv(csv: string, defaults: MaterialCsvDefau
         });
       }
 
-      if (asin || amazonUrl) {
+      if (asin || amazonUrl || priceAmount !== null) {
         const targetEdition = editionByAsin || editionForFormat;
         if (targetEdition) {
           await db.update(materialEditions).set({
             asin: asin || targetEdition.asin,
             amazonUrl: amazonUrl || targetEdition.amazonUrl,
+            priceAmount: priceAmount ?? targetEdition.priceAmount,
+            priceCurrency: "JPY",
+            priceUpdatedAt: priceAmount === null ? targetEdition.priceUpdatedAt : new Date(),
             isActive: true,
             updatedAt: new Date(),
           }).where(eq(materialEditions.id, targetEdition.id));
         } else {
-          await db.insert(materialEditions).values({ materialId, format: formatValue, asin: asin || null, amazonUrl: amazonUrl || null });
+          await db.insert(materialEditions).values({ materialId, format: formatValue, asin: asin || null, amazonUrl: amazonUrl || null, priceAmount, priceCurrency: "JPY", priceUpdatedAt: priceAmount === null ? null : new Date() });
         }
       }
 

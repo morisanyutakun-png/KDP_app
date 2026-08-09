@@ -48,7 +48,7 @@ export default async function MaterialImportPage({ searchParams }: { searchParam
 
       <section className="card mt-6 p-5 sm:p-7">
         <h2 className="font-black text-navy">対応している列</h2>
-        <p className="mt-3 text-sm leading-7 text-muted">タイトル、ASIN、問題構成、説明、大学、科目、シリーズ、難易度、販売形式、Amazon URL、公開。空欄は既存データを上書きしません。ASIN未登録の行はタイトルが一致すれば既存教材を更新します。</p>
+        <p className="mt-3 text-sm leading-7 text-muted">タイトル、ASIN、問題構成、説明、大学、科目、シリーズ、難易度、販売形式、Amazon URL、価格、公開。空欄は既存データを上書きしません。ASIN未登録の行はタイトルが一致すれば既存教材を更新します。</p>
       </section>
     </div>
   </>;

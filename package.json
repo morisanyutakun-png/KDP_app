@@ -15,6 +15,7 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",
     "db:import:provided": "tsx scripts/import-provided-materials.ts",
+    "db:sync:amazon": "tsx scripts/sync-verified-amazon-products.ts",
     "auth:hash": "tsx scripts/hash-password.ts"
   },
   "dependencies": {
