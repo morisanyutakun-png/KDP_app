@@ -124,7 +124,7 @@ export async function getRelatedMaterials(material: Awaited<ReturnType<typeof ge
   if (material.subjectId) relationConditions.push(eq(materials.subjectId, material.subjectId));
   if (!relationConditions.length) return [];
   const db = getDb();
-  return db.select(baseMaterialSelect())
+  const rows = await db.select(baseMaterialSelect())
     .from(materials)
     .leftJoin(universities, eq(materials.universityId, universities.id))
     .leftJoin(subjects, eq(materials.subjectId, subjects.id))
@@ -132,6 +132,11 @@ export async function getRelatedMaterials(material: Awaited<ReturnType<typeof ge
     .where(and(eq(materials.isPublished, true), ne(materials.id, material.id), or(...relationConditions)))
     .orderBy(desc(materials.publicationDate), desc(materials.createdAt))
     .limit(limit);
+  const editions = rows.length ? await db.select().from(materialEditions).where(and(
+    inArray(materialEditions.materialId, rows.map((row) => row.id)),
+    eq(materialEditions.isActive, true),
+  )).orderBy(asc(materialEditions.format)) : [];
+  return rows.map((row) => ({ ...row, editions: editions.filter((edition) => edition.materialId === row.id) }));
 }
 
 async function taxonomyWithCounts(

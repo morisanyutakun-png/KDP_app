@@ -40,7 +40,7 @@ export function MaterialCard({ material }: { material: CardMaterial }) {
         <h3 className="line-clamp-2 text-base font-black leading-snug text-navy sm:text-lg"><Link href={`/materials/${material.slug}`}>{material.title}</Link></h3>
         <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-muted">{material.description}</p>
         <div className="mt-auto flex items-end justify-between gap-2 pt-4">
-          <div><p className="text-lg font-black text-navy">{pricedEdition ? formatPrice(pricedEdition.priceAmount, pricedEdition.priceCurrency) : ""}</p><div className="mt-1 flex flex-wrap gap-1">
+          <div>{pricedEdition && <p className="text-lg font-black text-navy">{formatPrice(pricedEdition.priceAmount, pricedEdition.priceCurrency)}</p>}<div className="mt-1 flex flex-wrap gap-1">
             {material.editions?.slice(0, 2).map((edition) => <span key={edition.id} className="rounded-md bg-surface px-2 py-1 text-[10px] font-bold text-muted">{formatLabels[edition.format]}</span>)}
           </div></div>
           <Link href={`/materials/${material.slug}`} className="shrink-0 text-xs font-bold text-brand-blue group-hover:underline">詳しく見る →</Link>
