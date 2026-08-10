@@ -12,6 +12,7 @@ import { changeLogs, defaultPaperSettings, mockExamItems, mockExams, mockTemplat
 
 const optionalText = z.string().trim().transform((value) => value || null);
 const problemInput = z.object({
+  title: z.string().trim().min(1, "管理用タイトルは必須です。").max(120),
   subjectId: optionalText,
   field: z.string().trim().min(1, "分野は必須です。"),
   subfield: optionalText,
@@ -49,6 +50,7 @@ function readPaperSettings(formData: FormData, fallback = defaultPaperSettings):
 
 function parseProblem(formData: FormData) {
   return problemInput.parse({
+    title: text(formData, "title"),
     subjectId: text(formData, "subjectId"),
     field: text(formData, "field"),
     subfield: text(formData, "subfield"),

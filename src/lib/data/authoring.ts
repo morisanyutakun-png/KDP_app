@@ -23,7 +23,7 @@ function problemConditions(filters: ProblemSearch) {
   const conditions = [eq(problems.isArchived, false)];
   if (filters.q) {
     const term = `%${filters.q}%`;
-    conditions.push(or(ilike(problems.code, term), ilike(problems.statement, term), ilike(problems.field, term), ilike(problems.subfield, term))!);
+    conditions.push(or(ilike(problems.code, term), ilike(problems.title, term), ilike(problems.statement, term), ilike(problems.field, term), ilike(problems.subfield, term))!);
   }
   if (filters.subjectId) conditions.push(eq(problems.subjectId, filters.subjectId));
   if (filters.field) conditions.push(ilike(problems.field, `%${filters.field}%`));
@@ -40,6 +40,20 @@ function problemConditions(filters: ProblemSearch) {
 
 export async function getSubjects() {
   return getDb().select().from(subjects).orderBy(asc(subjects.name));
+}
+
+export async function getProblemFacets() {
+  const db = getDb();
+  const [fieldRows, subfieldRows, universityRows] = await Promise.all([
+    db.selectDistinct({ value: problems.field }).from(problems).where(eq(problems.isArchived, false)).orderBy(asc(problems.field)),
+    db.selectDistinct({ value: problems.subfield }).from(problems).where(and(eq(problems.isArchived, false), isNotNull(problems.subfield))).orderBy(asc(problems.subfield)),
+    db.selectDistinct({ value: problems.targetUniversity }).from(problems).where(and(eq(problems.isArchived, false), isNotNull(problems.targetUniversity))).orderBy(asc(problems.targetUniversity)),
+  ]);
+  return {
+    fields: fieldRows.map((row) => row.value),
+    subfields: subfieldRows.map((row) => row.value).filter((value): value is string => Boolean(value)),
+    universities: universityRows.map((row) => row.value).filter((value): value is string => Boolean(value)),
+  };
 }
 
 export async function searchProblems(filters: ProblemSearch = {}) {

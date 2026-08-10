@@ -29,6 +29,13 @@
       "when": 1786282007601,
       "tag": "0003_long_earthquake",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786324549052,
+      "tag": "0004_goofy_proudstar",
+      "breakpoints": true
     }
   ]
 }

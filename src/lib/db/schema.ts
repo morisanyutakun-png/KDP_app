@@ -176,6 +176,7 @@ export const changeLogs = pgTable("change_logs", {
 export const problems = pgTable("problems", {
   id: uuid("id").defaultRandom().primaryKey(),
   code: text("code").notNull(),
+  title: text("title"),
   subjectId: uuid("subject_id").references(() => subjects.id, { onDelete: "set null" }),
   field: text("field").notNull(),
   subfield: text("subfield"),
