@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, count, desc, eq, gte, ilike, inArray, isNotNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike, inArray, isNotNull, lte, ne, notInArray, or, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { mockExamItems, mockExams, mockTemplates, problems, subjects } from "@/lib/db/schema";
 
@@ -15,6 +15,16 @@ export type ProblemSearch = {
   timeMax?: number;
   usage?: "used" | "unused";
   verification?: "DRAFT" | "REVIEWING" | "VERIFIED" | "NEEDS_REVISION";
+  page?: number;
+  limit?: number;
+  excludeIds?: string[];
+  ignoreExamTarget?: boolean;
+};
+
+export type MockExamSearch = {
+  q?: string;
+  subjectId?: string;
+  status?: "DRAFT" | "READY";
   page?: number;
   limit?: number;
 };
@@ -33,6 +43,7 @@ function problemConditions(filters: ProblemSearch) {
   if (filters.targetUniversity) conditions.push(ilike(problems.targetUniversity, `%${filters.targetUniversity}%`));
   if (filters.timeMax) conditions.push(lte(problems.estimatedMinutes, filters.timeMax));
   if (filters.verification) conditions.push(eq(problems.verificationStatus, filters.verification));
+  if (filters.excludeIds?.length) conditions.push(notInArray(problems.id, filters.excludeIds));
   if (filters.usage === "used") conditions.push(sql`exists (select 1 from ${mockExamItems} usage_item where usage_item.problem_id = ${problems.id})`);
   if (filters.usage === "unused") conditions.push(sql`not exists (select 1 from ${mockExamItems} usage_item where usage_item.problem_id = ${problems.id})`);
   return conditions;
@@ -97,15 +108,31 @@ export async function getAuthoringOverview() {
   return { problemTotal: problemTotal.value, verifiedTotal: verifiedTotal.value, mockTotal: mockTotal.value, unusedTotal: unusedTotal.value, recentMocks };
 }
 
-export async function listMockExams() {
+export async function listMockExams(filters: MockExamSearch = {}) {
   const db = getDb();
-  const assigned = sql<number>`count(${mockExamItems.problemId})::int`;
-  return db.select({ exam: mockExams, subjectName: subjects.name, assigned }).from(mockExams)
-    .leftJoin(subjects, eq(mockExams.subjectId, subjects.id))
-    .leftJoin(mockExamItems, eq(mockExamItems.mockExamId, mockExams.id))
-    .where(ne(mockExams.status, "ARCHIVED"))
-    .groupBy(mockExams.id, subjects.name)
-    .orderBy(desc(mockExams.updatedAt));
+  const limit = Math.min(Math.max(filters.limit || 24, 1), 100);
+  const page = Math.max(filters.page || 1, 1);
+  const conditions = [ne(mockExams.status, "ARCHIVED")];
+  if (filters.q) {
+    const term = `%${filters.q}%`;
+    conditions.push(or(ilike(mockExams.title, term), ilike(mockExams.targetUniversity, term), ilike(subjects.name, term))!);
+  }
+  if (filters.subjectId) conditions.push(eq(mockExams.subjectId, filters.subjectId));
+  if (filters.status) conditions.push(eq(mockExams.status, filters.status));
+  const where = and(...conditions);
+  const assigned = sql<number>`(select count(*)::int from ${mockExamItems} assigned_item where assigned_item.mock_exam_id = ${mockExams.id} and assigned_item.problem_id is not null)`;
+  const [rows, totals] = await Promise.all([
+    db.select({ exam: mockExams, subjectName: subjects.name, assigned }).from(mockExams)
+      .leftJoin(subjects, eq(mockExams.subjectId, subjects.id))
+      .where(where)
+      .orderBy(desc(mockExams.updatedAt))
+      .limit(limit)
+      .offset((page - 1) * limit),
+    db.select({ value: count() }).from(mockExams)
+      .leftJoin(subjects, eq(mockExams.subjectId, subjects.id))
+      .where(where),
+  ]);
+  return { rows, total: totals[0]?.value || 0, page, limit };
 }
 
 export async function getMockExam(id: string) {
@@ -121,19 +148,30 @@ export async function getMockExam(id: string) {
 
 export async function getMockCandidates(examId: string, itemId: string, extra: ProblemSearch = {}) {
   const db = getDb();
-  const [slot] = await db.select().from(mockExamItems).where(and(eq(mockExamItems.id, itemId), eq(mockExamItems.mockExamId, examId))).limit(1);
-  if (!slot) return null;
+  const [[slot], [exam], assignedRows] = await Promise.all([
+    db.select().from(mockExamItems).where(and(eq(mockExamItems.id, itemId), eq(mockExamItems.mockExamId, examId))).limit(1),
+    db.select().from(mockExams).where(eq(mockExams.id, examId)).limit(1),
+    db.select({ itemId: mockExamItems.id, problemId: mockExamItems.problemId }).from(mockExamItems)
+      .where(and(eq(mockExamItems.mockExamId, examId), isNotNull(mockExamItems.problemId))),
+  ]);
+  if (!slot || !exam) return null;
+  const excludeIds = assignedRows
+    .filter((row) => row.itemId !== itemId && row.problemId)
+    .map((row) => row.problemId!);
   const filters: ProblemSearch = {
     ...extra,
+    subjectId: extra.subjectId || exam.subjectId || undefined,
     field: extra.field || slot.fieldFilter || undefined,
     subfield: extra.subfield || slot.subfieldFilter || undefined,
     difficultyMin: extra.difficultyMin || slot.difficultyMin || undefined,
     difficultyMax: extra.difficultyMax || slot.difficultyMax || undefined,
+    targetUniversity: extra.ignoreExamTarget ? undefined : extra.targetUniversity || exam.targetUniversity || undefined,
     usage: extra.usage || (slot.unusedOnly ? "unused" : undefined),
-    limit: 50,
+    excludeIds,
+    limit: extra.limit || 24,
   };
   const candidates = await searchProblems(filters);
-  return { slot, candidates };
+  return { slot, exam, filters, candidates };
 }
 
 export async function listMockTemplates() {

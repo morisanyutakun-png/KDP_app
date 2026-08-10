@@ -1,12 +1,12 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
-import { getMockTemplate } from "@/lib/data/authoring";
+import { getMockCandidates, getMockTemplate } from "@/lib/data/authoring";
 import { getDb } from "@/lib/db";
 import { changeLogs, defaultPaperSettings, mockExamItems, mockExams, mockTemplates, problems, type PaperSettings } from "@/lib/db/schema";
 
@@ -130,11 +130,17 @@ export async function updateMockSettingsAction(id: string, formData: FormData) {
   if (!title) throw new Error("模試名は必須です。");
   const current = await getDb().select().from(mockExams).where(eq(mockExams.id, id)).limit(1);
   if (!current[0]) throw new Error("模試が見つかりません。");
+  const requestedStatus = text(formData, "status") === "READY" ? "READY" : "DRAFT";
+  if (requestedStatus === "READY") {
+    const items = await getDb().select({ problemId: mockExamItems.problemId }).from(mockExamItems).where(eq(mockExamItems.mockExamId, id));
+    if (items.some((item) => !item.problemId)) throw new Error("未配置の大問があるため完成にできません。");
+  }
   await getDb().update(mockExams).set({
     title,
+    subjectId: text(formData, "subjectId") || null,
     targetUniversity: text(formData, "targetUniversity") || null,
     durationMinutes: Math.min(Math.max(Number(text(formData, "durationMinutes")) || 60, 1), 600),
-    status: text(formData, "status") === "READY" ? "READY" : "DRAFT",
+    status: requestedStatus,
     paperSettings: readPaperSettings(formData, current[0].paperSettings),
     updatedAt: new Date(),
   }).where(eq(mockExams.id, id));
@@ -153,19 +159,33 @@ export async function updateSlotFiltersAction(examId: string, itemId: string, fo
     updatedAt: new Date(),
   }).where(and(eq(mockExamItems.id, itemId), eq(mockExamItems.mockExamId, examId)));
   revalidatePath(`/admin/mocks/${examId}`);
+  redirect(`/admin/mocks/${examId}?slot=${itemId}`);
 }
 
 export async function assignProblemAction(examId: string, itemId: string, problemId: string) {
   await requireAdmin();
-  await getDb().update(mockExamItems).set({ problemId, updatedAt: new Date() }).where(and(eq(mockExamItems.id, itemId), eq(mockExamItems.mockExamId, examId)));
-  await getDb().update(mockExams).set({ updatedAt: new Date() }).where(eq(mockExams.id, examId));
+  const db = getDb();
+  const [[candidate], [duplicate]] = await Promise.all([
+    db.select({ id: problems.id }).from(problems).where(and(eq(problems.id, problemId), eq(problems.isArchived, false))).limit(1),
+    db.select({ id: mockExamItems.id }).from(mockExamItems).where(and(
+      eq(mockExamItems.mockExamId, examId),
+      eq(mockExamItems.problemId, problemId),
+      ne(mockExamItems.id, itemId),
+    )).limit(1),
+  ]);
+  if (!candidate) throw new Error("問題が見つからないか、アーカイブされています。");
+  if (duplicate) throw new Error("同じ問題は一つの模試に重複配置できません。");
+  await db.update(mockExamItems).set({ problemId, updatedAt: new Date() }).where(and(eq(mockExamItems.id, itemId), eq(mockExamItems.mockExamId, examId)));
+  await db.update(mockExams).set({ updatedAt: new Date() }).where(eq(mockExams.id, examId));
   revalidatePath(`/admin/mocks/${examId}`);
   revalidatePath("/admin/problems");
+  redirect(`/admin/mocks/${examId}#slot-${itemId}`);
 }
 
 export async function clearSlotAction(examId: string, itemId: string) {
   await requireAdmin();
   await getDb().update(mockExamItems).set({ problemId: null, updatedAt: new Date() }).where(and(eq(mockExamItems.id, itemId), eq(mockExamItems.mockExamId, examId)));
+  await getDb().update(mockExams).set({ updatedAt: new Date() }).where(eq(mockExams.id, examId));
   revalidatePath(`/admin/mocks/${examId}`);
   revalidatePath("/admin/problems");
 }
@@ -181,8 +201,91 @@ export async function moveSlotProblemAction(examId: string, itemId: string, dire
   await db.transaction(async (tx) => {
     await tx.update(mockExamItems).set({ problemId: target.problemId, updatedAt: new Date() }).where(eq(mockExamItems.id, current.id));
     await tx.update(mockExamItems).set({ problemId: current.problemId, updatedAt: new Date() }).where(eq(mockExamItems.id, target.id));
+    await tx.update(mockExams).set({ updatedAt: new Date() }).where(eq(mockExams.id, examId));
   });
   revalidatePath(`/admin/mocks/${examId}`);
+}
+
+export async function addMockSlotAction(examId: string) {
+  await requireAdmin();
+  const db = getDb();
+  await db.transaction(async (tx) => {
+    const [exam] = await tx.select().from(mockExams).where(eq(mockExams.id, examId)).limit(1);
+    if (!exam) throw new Error("模試が見つかりません。");
+    const items = await tx.select({ position: mockExamItems.position }).from(mockExamItems).where(eq(mockExamItems.mockExamId, examId));
+    if (items.length >= 20) throw new Error("大問は20問までです。");
+    const nextPosition = Math.max(0, ...items.map((item) => item.position)) + 1;
+    await tx.insert(mockExamItems).values({ mockExamId: examId, position: nextPosition });
+    await tx.update(mockExams).set({ questionCount: items.length + 1, updatedAt: new Date() }).where(eq(mockExams.id, examId));
+  });
+  revalidatePath(`/admin/mocks/${examId}`);
+  revalidatePath("/admin/mocks");
+}
+
+export async function removeLastEmptyMockSlotAction(examId: string) {
+  await requireAdmin();
+  const db = getDb();
+  await db.transaction(async (tx) => {
+    const items = await tx.select().from(mockExamItems).where(eq(mockExamItems.mockExamId, examId));
+    if (items.length <= 1) throw new Error("大問は最低1問必要です。");
+    const last = [...items].sort((a, b) => b.position - a.position)[0];
+    if (last.problemId) throw new Error("末尾の問題を外してから大問を削除してください。");
+    await tx.delete(mockExamItems).where(eq(mockExamItems.id, last.id));
+    await tx.update(mockExams).set({ questionCount: items.length - 1, updatedAt: new Date() }).where(eq(mockExams.id, examId));
+  });
+  revalidatePath(`/admin/mocks/${examId}`);
+  revalidatePath("/admin/mocks");
+}
+
+export async function autoAssignEmptySlotsAction(examId: string) {
+  await requireAdmin();
+  const db = getDb();
+  const items = await db.select().from(mockExamItems).where(eq(mockExamItems.mockExamId, examId));
+  for (const item of items.sort((a, b) => a.position - b.position)) {
+    if (item.problemId) continue;
+    const result = await getMockCandidates(examId, item.id, { limit: 1 });
+    const candidate = result?.candidates.rows[0]?.problem;
+    if (!candidate) continue;
+    await db.update(mockExamItems).set({ problemId: candidate.id, updatedAt: new Date() }).where(eq(mockExamItems.id, item.id));
+  }
+  await db.update(mockExams).set({ updatedAt: new Date() }).where(eq(mockExams.id, examId));
+  revalidatePath(`/admin/mocks/${examId}`);
+  revalidatePath("/admin/mocks");
+  revalidatePath("/admin/problems");
+}
+
+export async function duplicateMockExamAction(examId: string) {
+  await requireAdmin();
+  const db = getDb();
+  const created = await db.transaction(async (tx) => {
+    const [exam] = await tx.select().from(mockExams).where(eq(mockExams.id, examId)).limit(1);
+    if (!exam) throw new Error("模試が見つかりません。");
+    const items = await tx.select().from(mockExamItems).where(eq(mockExamItems.mockExamId, examId));
+    const [copy] = await tx.insert(mockExams).values({
+      title: `${exam.title}（コピー）`,
+      subjectId: exam.subjectId,
+      targetUniversity: exam.targetUniversity,
+      durationMinutes: exam.durationMinutes,
+      questionCount: exam.questionCount,
+      status: "DRAFT",
+      templateId: exam.templateId,
+      paperSettings: exam.paperSettings,
+    }).returning();
+    await tx.insert(mockExamItems).values(items.sort((a, b) => a.position - b.position).map((item) => ({
+      mockExamId: copy.id,
+      problemId: item.problemId,
+      position: item.position,
+      fieldFilter: item.fieldFilter,
+      subfieldFilter: item.subfieldFilter,
+      difficultyMin: item.difficultyMin,
+      difficultyMax: item.difficultyMax,
+      unusedOnly: item.unusedOnly,
+    })));
+    return copy;
+  });
+  revalidatePath("/admin");
+  revalidatePath("/admin/mocks");
+  redirect(`/admin/mocks/${created.id}`);
 }
 
 export async function archiveMockExamAction(id: string) {
