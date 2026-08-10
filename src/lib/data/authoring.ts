@@ -12,9 +12,11 @@ export type ProblemSearch = {
   difficultyMin?: number;
   difficultyMax?: number;
   targetUniversity?: string;
+  timeMin?: number;
   timeMax?: number;
   usage?: "used" | "unused";
   verification?: "DRAFT" | "REVIEWING" | "VERIFIED" | "NEEDS_REVISION";
+  sort?: "recent" | "difficulty-asc" | "difficulty-desc" | "time-asc" | "least-used";
   page?: number;
   limit?: number;
   excludeIds?: string[];
@@ -41,6 +43,7 @@ function problemConditions(filters: ProblemSearch) {
   if (filters.difficultyMin) conditions.push(gte(problems.difficulty, filters.difficultyMin));
   if (filters.difficultyMax) conditions.push(lte(problems.difficulty, filters.difficultyMax));
   if (filters.targetUniversity) conditions.push(ilike(problems.targetUniversity, `%${filters.targetUniversity}%`));
+  if (filters.timeMin) conditions.push(gte(problems.estimatedMinutes, filters.timeMin));
   if (filters.timeMax) conditions.push(lte(problems.estimatedMinutes, filters.timeMax));
   if (filters.verification) conditions.push(eq(problems.verificationStatus, filters.verification));
   if (filters.excludeIds?.length) conditions.push(notInArray(problems.id, filters.excludeIds));
@@ -53,12 +56,15 @@ export async function getSubjects() {
   return getDb().select().from(subjects).orderBy(asc(subjects.name));
 }
 
-export async function getProblemFacets() {
+export async function getProblemFacets(subjectId?: string) {
   const db = getDb();
+  const baseConditions = subjectId
+    ? and(eq(problems.isArchived, false), eq(problems.subjectId, subjectId))
+    : eq(problems.isArchived, false);
   const [fieldRows, subfieldRows, universityRows] = await Promise.all([
-    db.selectDistinct({ value: problems.field }).from(problems).where(eq(problems.isArchived, false)).orderBy(asc(problems.field)),
-    db.selectDistinct({ value: problems.subfield }).from(problems).where(and(eq(problems.isArchived, false), isNotNull(problems.subfield))).orderBy(asc(problems.subfield)),
-    db.selectDistinct({ value: problems.targetUniversity }).from(problems).where(and(eq(problems.isArchived, false), isNotNull(problems.targetUniversity))).orderBy(asc(problems.targetUniversity)),
+    db.selectDistinct({ value: problems.field }).from(problems).where(baseConditions).orderBy(asc(problems.field)),
+    db.selectDistinct({ value: problems.subfield }).from(problems).where(and(baseConditions, isNotNull(problems.subfield))).orderBy(asc(problems.subfield)),
+    db.selectDistinct({ value: problems.targetUniversity }).from(problems).where(and(baseConditions, isNotNull(problems.targetUniversity))).orderBy(asc(problems.targetUniversity)),
   ]);
   return {
     fields: fieldRows.map((row) => row.value),
@@ -73,12 +79,21 @@ export async function searchProblems(filters: ProblemSearch = {}) {
   const page = Math.max(filters.page || 1, 1);
   const where = and(...problemConditions(filters));
   const usageCount = sql<number>`(select count(*)::int from ${mockExamItems} usage_item where usage_item.problem_id = ${problems.id})`;
+  const orderBy = filters.sort === "difficulty-asc"
+    ? [asc(problems.difficulty), asc(problems.code)]
+    : filters.sort === "difficulty-desc"
+      ? [desc(problems.difficulty), asc(problems.code)]
+      : filters.sort === "time-asc"
+        ? [asc(problems.estimatedMinutes), asc(problems.code)]
+        : filters.sort === "least-used"
+          ? [asc(usageCount), asc(problems.code)]
+          : [desc(problems.updatedAt)];
   const [rows, totals] = await Promise.all([
     db.select({
       problem: problems,
       subjectName: subjects.name,
       usageCount,
-    }).from(problems).leftJoin(subjects, eq(problems.subjectId, subjects.id)).where(where).orderBy(desc(problems.updatedAt)).limit(limit).offset((page - 1) * limit),
+    }).from(problems).leftJoin(subjects, eq(problems.subjectId, subjects.id)).where(where).orderBy(...orderBy).limit(limit).offset((page - 1) * limit),
     db.select({ value: count() }).from(problems).where(where),
   ]);
   return { rows, total: totals[0]?.value || 0, page, limit };
@@ -167,6 +182,7 @@ export async function getMockCandidates(examId: string, itemId: string, extra: P
     difficultyMax: extra.difficultyMax || slot.difficultyMax || undefined,
     targetUniversity: extra.ignoreExamTarget ? undefined : extra.targetUniversity || exam.targetUniversity || undefined,
     usage: extra.usage || (slot.unusedOnly ? "unused" : undefined),
+    sort: extra.sort || "least-used",
     excludeIds,
     limit: extra.limit || 24,
   };

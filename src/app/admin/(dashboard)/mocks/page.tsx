@@ -37,20 +37,26 @@ export default async function MockExamsPage({ searchParams }: { searchParams: Pr
         <div className="flex items-end gap-2"><button className="btn-primary" type="submit">絞り込む</button><Link className="btn-secondary" href="/admin/mocks">解除</Link></div>
       </form>
 
-      <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
-        {rows.map(({ exam, subjectName, assigned }) => {
-          const assignedCount = Number(assigned);
-          const completion = Math.min(Math.round((assignedCount / Math.max(exam.questionCount, 1)) * 100), 100);
-          return <Link href={`/admin/mocks/${exam.id}`} key={exam.id} className="card group p-5 transition hover:border-slate-400">
-            <div className="flex items-start justify-between gap-4"><span className="border border-line bg-surface px-2 py-1 text-xs font-bold text-navy">{mockStatusLabels[exam.status]}</span><span className="text-xs text-muted">{formatDate(exam.updatedAt)}</span></div>
-            <h2 className="mt-4 text-lg font-bold text-navy group-hover:underline">{exam.title}</h2>
-            <p className="mt-2 text-sm text-muted">{subjectName || "科目未設定"}{exam.targetUniversity ? ` · ${exam.targetUniversity}` : ""}</p>
-            <div className="mt-5 h-1.5 overflow-hidden bg-slate-100"><div className="h-full bg-navy" style={{ width: `${completion}%` }} /></div>
-            <div className="mt-3 grid grid-cols-3 divide-x divide-line text-center text-xs"><div><strong className="block text-base text-navy">{assignedCount}/{exam.questionCount}</strong>配置</div><div><strong className="block text-base text-navy">{exam.durationMinutes}</strong>分</div><div><strong className="block text-base text-navy">{exam.paperSettings.paperSize}</strong>用紙</div></div>
-          </Link>;
-        })}
-        {!rows.length && <div className="card col-span-full grid min-h-52 place-items-center p-8 text-center"><div><h2 className="font-bold text-navy">条件に合う模試がありません</h2><p className="mt-2 text-sm text-muted">条件を解除するか、新しい模試を作成してください。</p><Link className="btn-primary mt-5" href="/admin/mocks/new">新しい模試を作る</Link></div></div>}
-      </div>
+      {rows.length ? <div className="card overflow-x-auto">
+        <table className="w-full min-w-[900px] border-collapse text-left">
+          <thead><tr className="border-b border-line text-xs"><th className="px-4 py-3">状態</th><th className="px-4 py-3">模試名</th><th className="px-4 py-3">科目・対象</th><th className="w-44 px-4 py-3">問題構成</th><th className="px-4 py-3">紙面</th><th className="px-4 py-3">更新</th><th className="w-20 px-4 py-3"><span className="sr-only">操作</span></th></tr></thead>
+          <tbody className="divide-y divide-line">
+            {rows.map(({ exam, subjectName, assigned }) => {
+              const assignedCount = Number(assigned);
+              const completion = Math.min(Math.round((assignedCount / Math.max(exam.questionCount, 1)) * 100), 100);
+              return <tr className="group hover:bg-slate-50" key={exam.id}>
+                <td className="whitespace-nowrap px-4 py-4"><span className="border border-line bg-surface px-2 py-1 text-xs font-bold text-navy">{mockStatusLabels[exam.status]}</span></td>
+                <td className="px-4 py-4"><Link className="font-bold text-navy group-hover:underline" href={`/admin/mocks/${exam.id}`}>{exam.title}</Link></td>
+                <td className="px-4 py-4 text-sm"><span className="font-medium text-ink">{subjectName || "科目未設定"}</span>{exam.targetUniversity && <span className="mt-1 block text-xs text-muted">{exam.targetUniversity}</span>}</td>
+                <td className="px-4 py-4"><div className="flex items-center justify-between gap-3 text-xs"><strong className="text-navy">{assignedCount}/{exam.questionCount}問</strong><span className="text-muted">{completion}%</span></div><div className="mt-2 h-1 overflow-hidden bg-slate-100"><div className="h-full bg-navy" style={{ width: `${completion}%` }} /></div></td>
+                <td className="whitespace-nowrap px-4 py-4 text-xs text-muted">{exam.durationMinutes}分 · {exam.paperSettings.paperSize}</td>
+                <td className="whitespace-nowrap px-4 py-4 text-xs text-muted">{formatDate(exam.updatedAt)}</td>
+                <td className="px-4 py-4 text-right"><Link aria-label={`${exam.title}を編集`} className="btn-secondary min-h-9 px-3 py-1 text-xs" href={`/admin/mocks/${exam.id}`}>編集</Link></td>
+              </tr>;
+            })}
+          </tbody>
+        </table>
+      </div> : <div className="card grid min-h-52 place-items-center p-8 text-center"><div><h2 className="font-bold text-navy">条件に合う模試がありません</h2><p className="mt-2 text-sm text-muted">条件を解除するか、新しい模試を作成してください。</p><Link className="btn-primary mt-5" href="/admin/mocks/new">新しい模試を作る</Link></div></div>}
 
       {pages > 1 && <nav className="flex items-center justify-center gap-3"><Link aria-disabled={page <= 1} className={`btn-secondary ${page <= 1 ? "pointer-events-none opacity-40" : ""}`} href={pageHref(page - 1)}>← 前へ</Link><span className="text-sm font-bold text-muted">{page} / {pages}</span><Link aria-disabled={page >= pages} className={`btn-secondary ${page >= pages ? "pointer-events-none opacity-40" : ""}`} href={pageHref(page + 1)}>次へ →</Link></nav>}
     </div>
