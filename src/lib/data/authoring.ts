@@ -161,6 +161,8 @@ export async function getMockExam(id: string) {
   return { ...exam, items };
 }
 
+export type MockExamDetail = NonNullable<Awaited<ReturnType<typeof getMockExam>>>;
+
 export async function getMockCandidates(examId: string, itemId: string, extra: ProblemSearch = {}) {
   const db = getDb();
   const [[slot], [exam], assignedRows] = await Promise.all([

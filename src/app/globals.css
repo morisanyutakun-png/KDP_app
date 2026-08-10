@@ -84,10 +84,36 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .admin-shell table th { font-weight: 600; letter-spacing: 0.02em; }
 .admin-shell table tbody tr { transition: background-color 120ms ease; }
 
+.mock-preview-stage { background: #e7e9ec; }
+.mock-preview-paper {
+  color: #111827;
+  box-shadow: 0 2px 14px rgb(20 30 45 / 12%);
+}
+.paper-edit-control {
+  position: absolute;
+  top: -2px;
+  right: 0;
+  z-index: 2;
+  border: 1px solid var(--line);
+  background: #fff;
+  padding: 4px 8px;
+  color: var(--navy);
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.paper-edit-control:hover { border-color: var(--navy); }
+.exam-problem-active {
+  outline: 2px solid var(--navy);
+  outline-offset: 7px;
+}
+
 @media print {
   @page { margin: 0; }
   body { background: #fff !important; }
   .no-print { display: none !important; }
   .print-shell { margin: 0 !important; padding: 0 !important; background: #fff !important; }
   .print-page { box-shadow: none !important; margin: 0 auto !important; }
+  .exam-problem-active { outline: none !important; }
 }
