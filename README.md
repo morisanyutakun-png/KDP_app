@@ -115,7 +115,9 @@ Blobへ置くのは問題図、表紙、PDF、CSVなどのファイル本体だ�
 
 ### 既存LaTeX原稿の読取検証
 
-`npm run db:import:manuscripts` は、ホームディレクトリ内の登録対象原稿を読み取り専用で解析し、問題と解答の対応件数を検証します。通常実行はドライランで、原稿・DBのどちらも変更しません。対象を限定する場合は、例えば `npm run db:import:manuscripts -- --project INFO-I --preview` のように実行します。
+`npm run db:import:manuscripts` は、ホームディレクトリ内の登録対象原稿を読み取り専用で解析し、問題と解答の対応件数を検証します。通常実行はドライランで、原稿・DBのどちらも変更しません。数学だけを検証する場合は `npm run db:import:manuscripts -- --math-only`、対象を一件に限定する場合は、例えば `npm run db:import:manuscripts -- --project NAGOYA-R1 --preview` のように実行します。
+
+本番取込では、十分に長い`MANUSCRIPT_IMPORT_TOKEN`を一時的にVercelへ設定してから `npm run db:import:manuscripts -- --math-only --apply` を実行します。取込APIは数学原稿だけを受け付け、問題コードと模試名を基準に再実行時の二重登録を防ぎます。取込完了後はトークンをVercelから削除してください。
 
 本番DBへ取り込んだ原稿由来の問題は、最初は「未検証（DRAFT）」です。管理メモには原稿照合用SHA-256、仮設定した難易度・想定時間、図表確認の要否を記録しています。元のLaTeX原稿は移動・改名・編集・削除せず、アプリ側へ本文・解答・解説の読み取り結果だけを保存します。
 

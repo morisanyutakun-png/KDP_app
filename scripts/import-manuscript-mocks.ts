@@ -81,6 +81,7 @@ const projects: Project[] = [
   { code: "KYU-R", directory: "九州大理系数学/九大数学vol1", targetUniversity: "九州大学（理系）" },
   { code: "KYO-B", directory: "京大文系数学/京大文系数学vol1", targetUniversity: "京都大学（文系）" },
   { code: "KYO-R", directory: "京大理系数学/京大数学vol1", targetUniversity: "京都大学（理系）" },
+  { code: "KIT", directory: "京都工芸繊維大数学/京工繊数学vol1", targetUniversity: "京都工芸繊維大学" },
   { code: "AIZU", directory: "会津大学数学/会津大数学vol1", targetUniversity: "会津大学" },
   { code: "HOK-R", directory: "北大理系数学/北大数学vol1", targetUniversity: "北海道大学（理系）" },
   { code: "CHIBA", directory: "千葉大数学/千葉大数学vol1", targetUniversity: "千葉大学" },
@@ -107,6 +108,7 @@ const projects: Project[] = [
   { code: "TOHOKU-R", directory: "東北大学理系数学/東北大数学", targetUniversity: "東北大学（理系）" },
   { code: "TOKYO-B", directory: "東大文系数学/東大文系数学vol1", targetUniversity: "東京大学（文系）" },
   { code: "TOKYO-R", directory: "東大理系数学/東大数学vol1", targetUniversity: "東京大学（理系）" },
+  { code: "TUAT", directory: "東京農工大/農工大数学vol1", targetUniversity: "東京農工大学" },
   { code: "SCIENCE-TOKYO", directory: "東工大数学/科学大数学", targetUniversity: "東京科学大学" },
   { code: "YNU-R", directory: "横国理系数学/横国数学vol1", targetUniversity: "横浜国立大学（理系）" },
   { code: "YCU-M", directory: "横浜市立医学数学/横市医数学vol1", targetUniversity: "横浜市立大学 医学部" },
@@ -649,6 +651,10 @@ async function projectPayloads(sourceRoot: string, project: Project): Promise<Im
     const setNumber = Number(questionFilename.match(/^set(\d+)_q\.tex$/)?.[1] || fileIndex + 1);
     const round = mockRound(questionSource, setNumber);
     const questionBlocks = extractQuestionBlocks(questionSource);
+    if (!questionBlocks.length && /準備中/.test(questionSource)) {
+      console.log(`${project.code.padEnd(15)} 第${setNumber}回は準備中のためスキップ`);
+      continue;
+    }
     const answerFiles = filenames.filter((name) => new RegExp(`^set${setNumber}_a[^.]*\\.tex$`).test(name));
     const answerSource = (await Promise.all(answerFiles.map((name) => readFile(path.join(directory, name), "utf8")))).join("\n\n");
     const solutionBlocks = extractSolutionBlocks(answerSource);
@@ -946,15 +952,16 @@ async function postPayload(endpoint: string, token: string, payload: ImportPaylo
 async function main() {
   const sourceRoot = optionValue("--source-root") || process.env.MANUSCRIPT_SOURCE_ROOT || homedir();
   const onlyProject = optionValue("--project");
+  const mathOnly = process.argv.includes("--math-only");
   const apply = process.argv.includes("--apply");
   const preview = process.argv.includes("--preview");
   const endpoint = optionValue("--endpoint") || process.env.NEXT_PUBLIC_SITE_URL || "https://kdp-app-khaki.vercel.app";
   const token = process.env.MANUSCRIPT_IMPORT_TOKEN;
   const selected = onlyProject ? projects.filter((project) => project.code === onlyProject) : projects;
-  const selectedStandalone = onlyProject ? standaloneProjects.filter((project) => project.code === onlyProject) : standaloneProjects;
-  const includeInformation = !onlyProject || onlyProject === "INFO-I";
-  const includeCivics = !onlyProject || onlyProject === "CIVICS";
-  const includeGhc = !onlyProject || onlyProject === "GHC";
+  const selectedStandalone = mathOnly ? [] : onlyProject ? standaloneProjects.filter((project) => project.code === onlyProject) : standaloneProjects;
+  const includeInformation = !mathOnly && (!onlyProject || onlyProject === "INFO-I");
+  const includeCivics = !mathOnly && (!onlyProject || onlyProject === "CIVICS");
+  const includeGhc = !mathOnly && (!onlyProject || onlyProject === "GHC");
   if (!selected.length && !selectedStandalone.length && !includeInformation && !includeCivics && !includeGhc) {
     throw new Error(`対象プロジェクトがありません: ${onlyProject}`);
   }
