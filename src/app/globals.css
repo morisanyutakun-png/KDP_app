@@ -79,7 +79,19 @@ button, a { -webkit-tap-highlight-color: transparent; }
   .math-content .katex { font-size: 1.03em; }
   .math-content .katex-display { @apply my-5 overflow-x-auto overflow-y-hidden py-1; }
   .math-content .katex-display > .katex { min-width: max-content; }
-  .math-content .katex-error { color: var(--ink) !important; font-family: inherit; }
+  .math-content .math-render-fallback {
+    display: inline-flex;
+    min-height: 1.75rem;
+    align-items: center;
+    border: 1px solid var(--line);
+    background: var(--surface);
+    padding: 0.1rem 0.5rem;
+    color: var(--muted);
+    font-family: inherit;
+    font-size: 0.78rem;
+    font-weight: 600;
+    line-height: 1.4;
+  }
   .math-content .math-answer-marker {
     display: inline-flex;
     min-width: 2rem;

@@ -4,6 +4,48 @@ import remarkMath from "remark-math";
 
 const strayDisplayMarker = "\u0000STRAY_DISPLAY_MATH\u0000";
 const mathTailCharacter = /[A-Za-z0-9\\{}\[\]^_=+\-*/().,:<>|\s]/;
+const answerMarkerPrefix = "MKR_PREVIEW:";
+const katexErrorColor = "#ff00fe";
+
+type HastNode = {
+  type: string;
+  tagName?: string;
+  properties?: Record<string, unknown>;
+  children?: HastNode[];
+};
+
+function nodeContainsKatexError(node: HastNode): boolean {
+  if (node.properties && Object.values(node.properties).some((value) => String(value).toLowerCase().includes(katexErrorColor))) return true;
+  return node.children?.some(nodeContainsKatexError) || false;
+}
+
+function rehypeSafeKatexErrors() {
+  return (tree: HastNode) => {
+    function replaceErrors(node: HastNode) {
+      if (!node.children) return;
+      node.children = node.children.map((child) => {
+        const classes = child.properties?.className;
+        const classNames = Array.isArray(classes) ? classes.map(String) : typeof classes === "string" ? classes.split(/\s+/) : [];
+        if (child.tagName === "span" && classNames.includes("katex") && nodeContainsKatexError(child)) {
+          return {
+            type: "element",
+            tagName: "span",
+            properties: { className: ["math-render-fallback"], role: "note", ariaLabel: "未対応の数式" },
+            children: [{ type: "text", value: "数式を確認" }],
+          };
+        }
+        replaceErrors(child);
+        return child;
+      });
+    }
+    replaceErrors(tree);
+  };
+}
+
+function answerMarker(label: string) {
+  const safeLabel = label.replace(/[`\\]/g, "").trim() || "　";
+  return `\`${answerMarkerPrefix}${safeLabel}\``;
+}
 
 function looksLikeDisplayMath(value: string) {
   const expression = value.trim();
@@ -69,10 +111,33 @@ function normalizeLegacyCommands(value: string) {
   return chunks.map((chunk, index) => {
     if (index % 2 === 1) return chunk;
     return chunk
-      .replace(/\\mkr\s*\{([^{}\n]*)\}/g, (_, label: string) => `\`MKR_PREVIEW:${label}\``)
+      .replace(/\\setcounter\s*\{enumi\}\s*\{(\d+)\}\s*(?:1\.[ \t]*)?/g, (_, value: string) => `\n\n${Number(value) + 1}. `)
+      .replace(/\\probpar\b/g, "\n\n")
+      .replace(/\\mkc\s*\{([^{}\n]*)\}\s*\{([^{}\n]*)\}\s*\{([^{}\n]*)\}/g, (_, first: string, second: string, third: string) => answerMarker(`${first}${second}${third}`))
+      .replace(/\\mkb\s*\{([^{}\n]*)\}\s*\{([^{}\n]*)\}/g, (_, first: string, second: string) => answerMarker(`${first}${second}`))
+      .replace(/\\(?:mkr|mk|mkg|slot|blank|mke)\s*(?:\[[^\]\n]*\])?\s*\{([^{}\n]*)\}/g, (_, label: string) => answerMarker(label))
+      .replace(/\\(?:mke|blank)\b/g, () => answerMarker(""))
       .replace(/\\keisan(?:\{[^{}]*\})?/g, "\n\n$\\keisan$\n\n")
       .replace(/\\(Pt|Vec)\s*\{([^{}\n]+)\}/g, (_, command: string, argument: string) => `$\\${command}{${argument}}$`)
-      .replace(/\\vec\s+(?:\{[^{}\n]+\}|[A-Za-z])/g, (expression) => `$${expression}$`);
+      .replace(/\\vec\s+(?:\{[^{}\n]+\}|[A-Za-z])/g, (expression) => `$${expression}$`)
+      .replace(/\\frac\s*\{([^{}\n]+)\}\s*\{([^{}\n]+)\}/g, (_, numerator: string, denominator: string) => `$\\frac{${numerator}}{${denominator}}$`)
+      .replace(/\\sqrt\s*(\[[^\]\n]+\])?\s*\{([^{}\n]+)\}/g, (_, root: string | undefined, expression: string) => `$\\sqrt${root || ""}{${expression}}$`)
+      .replace(/\\href\s*\{[^{}\n]*\}\s*\{([^{}\n]*)\}/g, "$1")
+      .replace(/\\url\s*\{[^{}\n]*\}/g, "")
+      .replace(/\\includegraphics(?:\[[^\]\n]*\])?\s*\{[^{}\n]*\}/g, "\n\n> 図版は元原稿を参照してください。\n\n")
+      .replace(/\\(?:begin|end)\s*\{[^{}\n]*\}(?:\s*\[[^\]\n]*\])?/g, "\n")
+      .replace(/\\item(?:\s*\[[^\]\n]*\])?/g, "\n\n1. ")
+      .replace(/\\(?:textbf|textit|emph|underline|underLine|mathrm|textrm|text)\s*\{([^{}\n]*)\}/g, "$1")
+      .replace(/\\(?:hspace|vspace)\*?(?:\s*\[[^\]\n]*\])?\s*\{[^{}\n]*\}/g, " ")
+      .replace(/\\(?:noindent|par)\b/g, "\n\n")
+      .replace(/\\(?:smallskip|medskip|bigskip|hfill|centering|raggedright|raggedleft|small|normalsize|large|Large|footnotesize)\b/g, " ")
+      .replace(/\\(?:input|include|usepackage|documentclass|newcommand|renewcommand|providecommand|def|gdef|edef|xdef|write|write18|openout|read|catcode|csname)\b(?:\s*\[[^\]\n]*\])?(?:\s*\{[^{}\n]*\})*/g, "")
+      .replace(/\\[A-Za-z@]+\*?(?:\s*\[[^\]\n]*\])?\s*\{([^{}\n]*)\}\s*\{([^{}\n]*)\}\s*\{([^{}\n]*)\}/g, "$1 $2 $3")
+      .replace(/\\[A-Za-z@]+\*?(?:\s*\[[^\]\n]*\])?\s*\{([^{}\n]*)\}\s*\{([^{}\n]*)\}/g, "$1 $2")
+      .replace(/\\[A-Za-z@]+\*?(?:\s*\[[^\]\n]*\])?\s*\{([^{}\n]*)\}/g, "$1")
+      .replace(/\\[A-Za-z@]+\*?(?:\s*\[[^\]\n]*\])?/g, "")
+      .replace(/\\\\(?:\[[^\]\n]*\])?/g, "\n")
+      .replace(/\*{3,}(?=\s*[→←↔])/g, "");
   }).join("");
 }
 
@@ -102,8 +167,10 @@ export function MathMarkdown({ source, className = "" }: { source: string; class
         remarkPlugins={[remarkMath]}
         rehypePlugins={[[rehypeKatex, {
           strict: false,
-          throwOnError: false,
-          errorColor: "#24324a",
+          errorColor: katexErrorColor,
+          trust: false,
+          maxExpand: 200,
+          maxSize: 20,
           macros: {
             "\\Pt": "\\mathrm{#1}",
             "\\Vec": "\\overrightarrow{\\mathrm{#1}}",
@@ -127,13 +194,20 @@ export function MathMarkdown({ source, className = "" }: { source: string; class
             "\\geqq": "\\geqslant",
             "\\fallingdotseq": "\\approx",
           },
-        }]]}
+        }], rehypeSafeKatexErrors]}
         components={{
           code({ className: codeClassName, children }) {
             const value = String(children).replace(/\n$/, "");
-            const marker = !codeClassName ? value.match(/^MKR_PREVIEW:([\s\S]*)$/) : null;
+            const marker = !codeClassName ? value.match(new RegExp(`^${answerMarkerPrefix}([\\s\\S]*)$`)) : null;
             if (marker) return <span aria-label={`解答欄 ${marker[1]}`} className="math-answer-marker">{marker[1]}</span>;
             return <code className={codeClassName}>{children}</code>;
+          },
+          span({ className: spanClassName, children, node, ...props }) {
+            if (spanClassName?.split(/\s+/).includes("katex-error")) {
+              return <span aria-label="未対応の数式" className="math-render-fallback">数式を確認</span>;
+            }
+            void node;
+            return <span className={spanClassName} {...props}>{children}</span>;
           },
         }}
         skipHtml
