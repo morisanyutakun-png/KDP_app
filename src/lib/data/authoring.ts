@@ -58,11 +58,18 @@ export async function getSubjects() {
 }
 
 export async function getMathSubject() {
-  const [subject] = await getDb().select().from(subjects)
-    .where(or(eq(subjects.slug, "mathematics"), eq(subjects.name, "数学")))
-    .orderBy(asc(subjects.name))
+  const db = getDb();
+  const [subjectBySlug] = await db.select().from(subjects)
+    .where(eq(subjects.slug, "mathematics"))
     .limit(1);
-  return subject || null;
+  if (subjectBySlug) return subjectBySlug;
+
+  // 旧DBとの互換用。取込先として使う正式slugがない場合だけ名前で探す。
+  const [legacySubject] = await db.select().from(subjects)
+    .where(eq(subjects.name, "数学"))
+    .orderBy(asc(subjects.createdAt))
+    .limit(1);
+  return legacySubject || null;
 }
 
 export async function getProblemFacets(subjectId?: string, field?: string) {
