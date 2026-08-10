@@ -182,10 +182,33 @@ export async function updateSlotFiltersAction(examId: string, itemId: string, fo
     updatedAt: new Date(),
   }).where(and(eq(mockExamItems.id, itemId), eq(mockExamItems.mockExamId, examId)));
   revalidatePath(`/admin/mocks/${examId}`);
-  redirect(`/admin/mocks/${examId}?slot=${itemId}`);
+  redirect(`/admin/mocks/${examId}?slot=${itemId}#workspace`);
 }
 
-export async function assignProblemAction(examId: string, itemId: string, problemId: string) {
+// 採用後も候補の絞り込みを保つための引き継ぎ。想定外のクエリは持ち込まない。
+const candidateQueryKeys = [
+  "candidateQ",
+  "candidateUniversity",
+  "candidateField",
+  "candidateSubfield",
+  "candidateDifficultyMode",
+  "candidateTimeBand",
+  "candidateUsage",
+  "candidateVerification",
+  "candidateSort",
+] as const;
+
+function candidateQuery(raw: string) {
+  const source = new URLSearchParams(raw.startsWith("?") ? raw.slice(1) : raw);
+  const params = new URLSearchParams();
+  for (const key of candidateQueryKeys) {
+    const value = source.get(key);
+    if (value) params.set(key, value.slice(0, 120));
+  }
+  return params;
+}
+
+export async function assignProblemAction(examId: string, itemId: string, problemId: string, keepQuery = "") {
   await requireAdmin();
   const db = getDb();
   const [[candidate], [duplicate], [currentSlot]] = await Promise.all([
@@ -207,9 +230,16 @@ export async function assignProblemAction(examId: string, itemId: string, proble
     .where(and(eq(mockExamItems.mockExamId, examId), isNull(mockExamItems.problemId)))
     .orderBy(asc(mockExamItems.position));
   const nextSlot = emptySlots.find((slot) => slot.position > currentSlot.position) || emptySlots[0];
+  const params = candidateQuery(keepQuery);
+  params.set("slot", nextSlot?.id || itemId);
   revalidatePath(`/admin/mocks/${examId}`);
   revalidatePath("/admin/problems");
-  redirect(`/admin/mocks/${examId}?slot=${nextSlot?.id || itemId}#candidates`);
+  redirect(`/admin/mocks/${examId}?${params.toString()}#workspace`);
+}
+
+// 候補リストはクライアント側で切り替わるため、採用対象はフォーム値で受け取る。
+export async function assignProblemFromFormAction(examId: string, formData: FormData) {
+  await assignProblemAction(examId, text(formData, "slotId"), text(formData, "problemId"), text(formData, "keepQuery"));
 }
 
 export async function clearSlotAction(examId: string, itemId: string) {

@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import {
   addMockSlotAction,
   archiveMockExamAction,
-  assignProblemAction,
+  assignProblemFromFormAction,
   autoAssignEmptySlotsAction,
   clearSlotAction,
   duplicateMockExamAction,
@@ -13,10 +13,10 @@ import {
   updateMockSettingsAction,
   updateSlotFiltersAction,
 } from "@/app/admin/author-actions";
-import { AdminPageHeader } from "@/components/admin-ui";
-import { CandidateFilterPanel } from "@/components/candidate-filter-panel";
+import { CandidateFilterBar } from "@/components/candidate-filter-bar";
 import { MathMarkdown } from "@/components/math-markdown";
-import { getTimeBandRange, mockStatusLabels, timeBandOptions, verificationLabels } from "@/lib/authoring-labels";
+import { MockWorkbench, type WorkbenchProblem } from "@/components/mock-workbench";
+import { excerpt, getTimeBandRange, mockStatusLabels, timeBandOptions, verificationLabels } from "@/lib/authoring-labels";
 import {
   getMathSubject,
   getMockCandidates,
@@ -27,6 +27,7 @@ import {
   type ProblemSearch,
   type UniversityDifficultyProfile,
 } from "@/lib/data/authoring";
+import type { Problem } from "@/lib/db/schema";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +62,7 @@ function candidateSearch(query: Query, universityProfiles: UniversityDifficultyP
   }
   const timeBand = getTimeBandRange(one(query.candidateTimeBand));
   return {
+    q: one(query.candidateQ) || undefined,
     field: one(query.candidateField) || undefined,
     subfield: one(query.candidateSubfield) || undefined,
     targetUniversity: university,
@@ -77,8 +79,20 @@ function candidateSearch(query: Query, universityProfiles: UniversityDifficultyP
       : "least-used",
     ignoreExamTarget: !university,
     page: Number(one(query.candidatePage)) || 1,
-    limit: 8,
+    limit: 12,
   };
+}
+
+// リストに1行だけ出す下読み用テキスト。数式は落として日本語の骨格を残す。
+function candidateSnippet(statement: string) {
+  const stripped = statement
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")
+    .replace(/\$\$[\s\S]*?\$\$/g, "　")
+    .replace(/\$[^$\n]*\$/g, "　")
+    .replace(/\s+/g, " ")
+    .trim();
+  return excerpt(stripped.length >= 16 ? stripped : statement, 90);
 }
 
 export default async function MockBuilderPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Query> }) {
@@ -114,8 +128,10 @@ export default async function MockBuilderPage({ params, searchParams }: { params
   const complete = emptyCount === 0;
   const lastSlotIsEmpty = !data.items.at(-1)?.problem;
   const paper = data.exam.paperSettings;
+  const activeSlot = data.items.find(({ item }) => item.id === selectedItem);
+  const selectedUniversityProfile = universityProfiles.find((profile) => profile.university === one(query.candidateUniversity));
 
-  const hrefWith = (updates: Record<string, string | undefined>, hash = "") => {
+  const hrefWith = (updates: Record<string, string | undefined>) => {
     const url = new URLSearchParams();
     for (const [key, value] of Object.entries(query)) if (typeof value === "string" && value) url.set(key, value);
     for (const [key, value] of Object.entries(updates)) {
@@ -123,156 +139,181 @@ export default async function MockBuilderPage({ params, searchParams }: { params
       else url.delete(key);
     }
     const suffix = url.size ? `?${url.toString()}` : "";
-    return `/admin/mocks/${id}${suffix}${hash}`;
+    return `/admin/mocks/${id}${suffix}`;
   };
-  const candidatePageHref = (page: number) => hrefWith({ candidatePage: String(page) }, "#candidates");
-  const difficultyMode = candidateDifficultyMode(query);
-  const selectedUniversityProfile = universityProfiles.find((profile) => profile.university === one(query.candidateUniversity));
-  const activeCandidateFilters: Array<{ label: string; href: string }> = [];
-  if (one(query.candidateUniversity)) activeCandidateFilters.push({
-    label: one(query.candidateUniversity),
-    href: hrefWith({
-      candidateUniversity: undefined,
-      candidateDifficultyMode: difficultyMode.startsWith("university-") ? "all" : difficultyMode,
-      candidatePage: undefined,
-    }, "#candidates"),
-  });
-  if (one(query.candidateField)) activeCandidateFilters.push({
-    label: one(query.candidateField),
-    href: hrefWith({ candidateField: undefined, candidateSubfield: undefined, candidatePage: undefined }, "#candidates"),
-  });
-  if (one(query.candidateSubfield)) activeCandidateFilters.push({
-    label: one(query.candidateSubfield),
-    href: hrefWith({ candidateSubfield: undefined, candidatePage: undefined }, "#candidates"),
-  });
-  if (difficultyMode !== "all") {
-    const difficultyLabels: Record<string, string> = {
-      "university-easier": "大学基準：易しめ",
-      "university-standard": "大学基準：標準",
-      "university-harder": "大学基準：難しめ",
-    };
-    activeCandidateFilters.push({
-      label: difficultyLabels[difficultyMode] || `難易度 ${difficultyMode.replace("exact-", "")}`,
-      href: hrefWith({ candidateDifficultyMode: "all", candidateDifficulty: undefined, candidatePage: undefined }, "#candidates"),
-    });
-  }
-  const selectedTimeBand = timeBandOptions.find((option) => option.value === one(query.candidateTimeBand));
-  if (selectedTimeBand) activeCandidateFilters.push({
-    label: selectedTimeBand.label,
-    href: hrefWith({ candidateTimeBand: undefined, candidatePage: undefined }, "#candidates"),
-  });
-  if (one(query.candidateUsage)) activeCandidateFilters.push({
-    label: one(query.candidateUsage) === "unused" ? "未使用のみ" : "使用済みのみ",
-    href: hrefWith({ candidateUsage: undefined, candidatePage: undefined }, "#candidates"),
-  });
-  const selectedVerification = one(query.candidateVerification) as keyof typeof verificationLabels;
-  if (verificationLabels[selectedVerification]) activeCandidateFilters.push({
-    label: verificationLabels[selectedVerification],
-    href: hrefWith({ candidateVerification: undefined, candidatePage: undefined }, "#candidates"),
+
+  const relativeNote = (problem: Problem) => {
+    if (!selectedUniversityProfile || problem.targetUniversity !== selectedUniversityProfile.university) return null;
+    if (problem.difficulty < selectedUniversityProfile.baselineDifficulty) return "大学基準より易しめ";
+    if (problem.difficulty > selectedUniversityProfile.baselineDifficulty) return "大学基準より難しめ";
+    return "大学標準";
+  };
+
+  const toWorkbenchProblem = (problem: Problem, usageCount: number | null): WorkbenchProblem => ({
+    id: problem.id,
+    title: problem.title || problem.code,
+    code: problem.code,
+    field: problem.field,
+    subfield: problem.subfield,
+    difficulty: problem.difficulty,
+    minutes: problem.estimatedMinutes,
+    usageCount,
+    university: problem.targetUniversity,
+    note: relativeNote(problem),
+    snippet: candidateSnippet(problem.statement),
+    href: `/admin/problems/${problem.id}`,
+    body: <>
+      {problem.imageUrl && <Image unoptimized src={problem.imageUrl} alt="問題図" width={900} height={600} className="mx-auto mb-6 max-h-80 w-auto object-contain" />}
+      <MathMarkdown source={problem.statement} />
+    </>,
   });
 
-  return <>
-    <AdminPageHeader
-      eyebrow="数学予想模試"
-      title={data.exam.title}
-      description={`${assigned.length}/${data.items.length}問を配置 · 想定${totalMinutes}分`}
-      action={<div className="flex flex-wrap gap-2">
-        <form action={duplicateMockExamAction.bind(null, id)}><button className="btn-secondary" type="submit">複製</button></form>
-        <Link className="btn-secondary" href={`/admin/print/${id}?mode=questions`}>最終紙面</Link>
-      </div>}
-    />
+  const totalPages = candidateData ? Math.ceil(candidateData.candidates.total / candidateData.candidates.limit) : 0;
+  const pager = candidateData && totalPages > 1 ? <nav className="flex shrink-0 items-center justify-between gap-2 border-t border-line bg-white px-3 py-2">
+    <Link
+      aria-disabled={candidateData.candidates.page <= 1}
+      className={`wb-ghost ${candidateData.candidates.page <= 1 ? "pointer-events-none opacity-40" : ""}`}
+      href={hrefWith({ candidatePage: String(candidateData.candidates.page - 1) })}
+    >← 前へ</Link>
+    <span className="text-[11px] tabular-nums text-muted">{candidateData.candidates.page} / {totalPages}</span>
+    <Link
+      aria-disabled={candidateData.candidates.page >= totalPages}
+      className={`wb-ghost ${candidateData.candidates.page >= totalPages ? "pointer-events-none opacity-40" : ""}`}
+      href={hrefWith({ candidatePage: String(candidateData.candidates.page + 1) })}
+    >次へ →</Link>
+  </nav> : null;
 
-    <div className="workbench max-w-[1600px] space-y-4">
-      <section className="card flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 text-xs">
-        <span><span className="text-muted">配置</span> <strong className="ml-1 text-navy">{assigned.length}/{data.items.length}問</strong></span>
-        <span><span className="text-muted">合計時間</span> <strong className="ml-1 text-navy">{totalMinutes}分</strong></span>
-        <span><span className="text-muted">平均難易度</span> <strong className="ml-1 text-navy">{averageDifficulty ? averageDifficulty.toFixed(1) : "—"}</strong></span>
-        <span><span className="text-muted">他模試で使用</span> <strong className="ml-1 text-navy">{duplicateUse}問</strong></span>
-        <div className="ml-auto h-1.5 w-full overflow-hidden bg-slate-100 sm:w-44"><div className="h-full bg-navy" style={{ width: `${Math.round((assigned.length / Math.max(data.items.length, 1)) * 100)}%` }} /></div>
-      </section>
-
-      <div className="grid items-start gap-4 xl:grid-cols-[310px_minmax(0,1fr)]">
-        <aside className="space-y-4 xl:sticky xl:top-4">
-          <section className="card overflow-hidden">
-            <header className="flex items-center justify-between border-b border-line bg-surface px-4 py-3"><h2 className="text-sm font-bold text-navy">大問構成</h2><span className="text-xs text-muted">数学</span></header>
-            <nav aria-label="大問の選択" className="divide-y divide-line">
-              {data.items.map(({ item, problem }, index) => <div className={`p-3 ${selectedItem === item.id ? "border-l-2 border-navy bg-surface" : ""}`} key={item.id}>
-                <div className="flex items-start gap-3">
-                  <Link className="grid size-8 shrink-0 place-items-center bg-navy text-xs font-bold text-white" href={`/admin/mocks/${id}?slot=${item.id}#candidates`}>{item.position}</Link>
-                  <div className="min-w-0 flex-1"><Link className="block truncate text-sm font-bold text-navy" href={`/admin/mocks/${id}?slot=${item.id}#candidates`}>{problem?.title || problem?.code || "問題未選択"}</Link><p className="mt-1 truncate text-[11px] text-muted">{problem ? `${problem.field} · 難易度${problem.difficulty} · ${problem.estimatedMinutes}分` : "候補を表示中"}</p></div>
-                </div>
-                <div className="mt-2 flex items-center justify-end gap-1"><form action={moveSlotProblemAction.bind(null, id, item.id, "up")}><button aria-label={`第${item.position}問を上へ`} className="border border-line bg-white px-2 py-1 text-xs text-navy disabled:opacity-30" disabled={index === 0} type="submit">↑</button></form><form action={moveSlotProblemAction.bind(null, id, item.id, "down")}><button aria-label={`第${item.position}問を下へ`} className="border border-line bg-white px-2 py-1 text-xs text-navy disabled:opacity-30" disabled={index === data.items.length - 1} type="submit">↓</button></form>{problem && <form action={clearSlotAction.bind(null, id, item.id)}><button className="border border-line bg-white px-2 py-1 text-xs text-muted" type="submit">外す</button></form>}</div>
-                <details className="mt-2"><summary className="cursor-pointer text-[11px] font-bold text-muted">自動選定条件</summary><form action={updateSlotFiltersAction.bind(null, id, item.id)} className="mt-3 space-y-2 border-t border-line pt-3"><label><span className="label text-[11px]">分野</span><select className="input" name="fieldFilter" defaultValue={item.fieldFilter || ""}><option value="">指定なし</option>{facets.fields.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label><span className="label text-[11px]">サブ分野</span><select className="input" name="subfieldFilter" defaultValue={item.subfieldFilter || ""}><option value="">指定なし</option>{facets.subfields.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label><span className="label text-[11px]">難易度</span><select className="input" name="difficultyMin" defaultValue={item.difficultyMin || ""}><option value="">指定なし</option>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value}</option>)}</select><input name="difficultyMax" type="hidden" value={item.difficultyMin || ""} /></label><label><span className="label text-[11px]">使用履歴</span><select className="input" name="unusedOnly" defaultValue={item.unusedOnly ? "true" : ""}><option value="">指定なし</option><option value="true">未使用のみ</option></select></label><button className="btn-secondary w-full" type="submit">保存して候補を表示</button></form></details>
-              </div>)}
-            </nav>
-            <div className="grid gap-2 border-t border-line p-3">
-              {emptyCount > 0 && <form action={autoAssignEmptySlotsAction.bind(null, id)}><button className="btn-secondary w-full" type="submit">空欄を自動で仮配置</button></form>}
-              <div className="grid grid-cols-2 gap-2"><form action={addMockSlotAction.bind(null, id)}><button className="btn-secondary w-full px-2" disabled={data.items.length >= 20} type="submit">大問を追加</button></form><form action={removeLastEmptyMockSlotAction.bind(null, id)}><button className="btn-secondary w-full px-2" disabled={data.items.length <= 1 || !lastSlotIsEmpty} type="submit">空欄を削除</button></form></div>
-            </div>
-          </section>
-
-          <details className="card overflow-hidden">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4"><span><strong className="block text-sm text-navy">模試設定</strong><span className="mt-1 block text-[11px] text-muted">構成後に必要な項目だけ変更</span></span><span className="border border-line bg-surface px-2 py-1 text-[11px] font-bold text-navy">{mockStatusLabels[data.exam.status]}</span></summary>
-            <form action={updateMockSettingsAction.bind(null, id)} className="space-y-3 border-t border-line p-4">
-              <input name="subjectId" type="hidden" value={mathSubject?.id || data.exam.subjectId || ""} />
-              <label><span className="label text-xs">模試名</span><input className="input" name="title" required defaultValue={data.exam.title} /></label>
-              <label><span className="label text-xs">想定大学</span><select className="input" name="targetUniversity" defaultValue={data.exam.targetUniversity || ""}><option value="">指定なし</option>{facets.universities.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-              <div className="grid grid-cols-2 gap-2"><label><span className="label text-xs">試験時間</span><input className="input" name="durationMinutes" type="number" min="1" max="600" defaultValue={data.exam.durationMinutes} /></label><label><span className="label text-xs">状態</span><select className="input" name="status" defaultValue={data.exam.status}><option value="DRAFT">編集中</option><option value="READY" disabled={!complete}>完成</option></select></label><label><span className="label text-xs">用紙</span><select className="input" name="paperSize" defaultValue={paper.paperSize}><option value="B5">B5</option><option value="A4">A4</option></select></label><label><span className="label text-xs">文字 pt</span><input className="input" name="fontSize" type="number" min="9" max="14" defaultValue={paper.fontSize} /></label><label><span className="label text-xs">余白 mm</span><input className="input" name="marginMm" type="number" min="8" max="35" defaultValue={paper.marginMm} /></label><label><span className="label text-xs">段組</span><select className="input" name="columns" defaultValue={String(paper.columns)}><option value="1">1段</option><option value="2">2段</option></select></label></div>
-              <div className="space-y-2 text-xs"><label className="flex items-center gap-2"><input type="checkbox" name="showPageNumbers" defaultChecked={paper.showPageNumbers} />ページ番号</label><label className="flex items-center gap-2"><input type="checkbox" name="pageBreakPerProblem" defaultChecked={paper.pageBreakPerProblem} />問題ごとに改ページ</label></div>
-              <button className="btn-primary w-full" type="submit">設定を保存</button>
-            </form>
-          </details>
-        </aside>
-
-        <main className="min-w-0" id="candidates">
-          {!mathSubject && <section className="card p-8 text-center"><h2 className="font-bold text-navy">数学科目が登録されていません</h2><p className="mt-2 text-sm text-muted">DBセットアップを確認してください。</p></section>}
-          {candidateData && <section className="card overflow-hidden">
-            <header className="border-b border-line bg-surface px-5 py-4"><p className="text-xs text-muted">第{candidateData.slot.position}問</p><div className="mt-1 flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-bold text-navy">候補問題から選ぶ</h2><span className="text-xs font-bold text-muted">{candidateData.candidates.total}件</span></div><p className="mt-2 text-xs text-muted">問題文を読み比べて、採用する問題を選択してください。</p></header>
-
-            <CandidateFilterPanel
-              action={`/admin/mocks/${id}#candidates`}
-              activeFilters={activeCandidateFilters}
-              fields={facets.fields}
-              resetHref={`/admin/mocks/${id}?slot=${candidateData.slot.id}#candidates`}
-              resultCount={candidateData.candidates.total}
-              selected={{
-                university: one(query.candidateUniversity),
-                field: one(query.candidateField),
-                subfield: one(query.candidateSubfield),
-                difficultyMode,
-                timeBand: one(query.candidateTimeBand),
-                usage: one(query.candidateUsage),
-                verification: one(query.candidateVerification),
-                sort: candidateData.filters.sort || "least-used",
-              }}
-              slotId={candidateData.slot.id}
-              subfields={facets.subfields}
-              timeOptions={timeBandOptions.map(({ value, label }) => ({ value, label }))}
-              universities={facets.universities}
-              universityProfiles={universityProfiles}
-              verificationOptions={Object.entries(verificationLabels).map(([value, label]) => ({ value, label }))}
-            />
-
-            <div className="divide-y divide-line">
-              {candidateData.candidates.rows.map(({ problem, usageCount }) => <article key={problem.id}>
-                <header className="flex flex-col gap-3 border-b border-line bg-white px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0"><h3 className="font-bold text-navy">{problem.title || problem.code}</h3><p className="mt-1 text-xs text-muted">{problem.code} · {problem.field}{problem.subfield ? ` / ${problem.subfield}` : ""} · 難易度{problem.difficulty} · {problem.estimatedMinutes}分 · 使用{Number(usageCount)}回</p>{problem.targetUniversity && <div className="mt-2 flex flex-wrap items-center gap-2 text-xs"><span className="border border-line bg-surface px-2 py-1 text-muted">想定：{problem.targetUniversity}</span>{selectedUniversityProfile && problem.targetUniversity === selectedUniversityProfile.university && <span className="border border-navy px-2 py-1 font-bold text-navy">{problem.difficulty < selectedUniversityProfile.baselineDifficulty ? "大学基準より易しめ" : problem.difficulty > selectedUniversityProfile.baselineDifficulty ? "大学基準より難しめ" : "大学標準"}</span>}</div>}</div>
-                  <form className="shrink-0" action={assignProblemAction.bind(null, id, candidateData.slot.id, problem.id)}><button className="btn-primary w-full sm:w-auto" type="submit">第{candidateData.slot.position}問に採用</button></form>
-                </header>
-                <div className="p-5 sm:p-7">{problem.imageUrl && <Image unoptimized src={problem.imageUrl} alt="問題図" width={900} height={600} className="mx-auto mb-5 max-h-72 w-auto object-contain" />}<MathMarkdown source={problem.statement} /><details className="mt-5 border-t border-line pt-3"><summary className="cursor-pointer text-xs font-bold text-muted">解答・解説を確認</summary><div className="mt-4 grid gap-5 lg:grid-cols-2"><section><h4 className="mb-2 text-sm font-bold text-navy">解答</h4><MathMarkdown source={problem.answer || "未入力"} /></section><section><h4 className="mb-2 text-sm font-bold text-navy">解説</h4><MathMarkdown source={problem.explanation || "未入力"} /></section></div></details></div>
-              </article>)}
-              {!candidateData.candidates.rows.length && <div className="p-10 text-center"><h3 className="font-bold text-navy">条件に合う数学問題がありません</h3><p className="mt-2 text-sm text-muted">上に表示されている条件を1つ外すと、候補を広げられます。</p></div>}
-            </div>
-            {candidateData.candidates.total > candidateData.candidates.limit && <nav className="flex items-center justify-center gap-3 border-t border-line p-4"><Link className={`btn-secondary ${candidateData.candidates.page <= 1 ? "pointer-events-none opacity-40" : ""}`} href={candidatePageHref(candidateData.candidates.page - 1)}>← 前へ</Link><span className="text-sm font-bold text-muted">{candidateData.candidates.page} / {Math.ceil(candidateData.candidates.total / candidateData.candidates.limit)}</span><Link className={`btn-secondary ${candidateData.candidates.page * candidateData.candidates.limit >= candidateData.candidates.total ? "pointer-events-none opacity-40" : ""}`} href={candidatePageHref(candidateData.candidates.page + 1)}>次へ →</Link></nav>}
-          </section>}
-
-          <section className="mt-4 card flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-            <div><h2 className="text-sm font-bold text-navy">最後に紙面を確認</h2><p className="mt-1 text-xs text-muted">問題構成が決まったあとに、印刷レイアウトと解答冊子を確認します。</p></div>
-            <div className="flex flex-wrap gap-2"><Link className="btn-primary" href={`/admin/print/${id}?mode=questions`}>紙面プレビュー</Link><a className="btn-secondary" href={`/admin/mocks/${id}/export/markdown?mode=combined`}>Markdown</a><a className="btn-secondary" href={`/admin/mocks/${id}/export/latex?mode=combined`}>LaTeX</a></div>
-          </section>
-          <form className="mt-4 text-right" action={archiveMockExamAction.bind(null, id)}><button className="text-xs font-bold text-muted underline" type="submit">この模試をアーカイブ</button></form>
-        </main>
+  const settingsPanel = <>
+    <form action={updateMockSettingsAction.bind(null, id)} className="space-y-2.5">
+      <input name="subjectId" type="hidden" value={mathSubject?.id || data.exam.subjectId || ""} />
+      <label><span className="label mb-1 text-[11px]">模試名</span><input className="input h-9 min-h-9 text-[13px]" name="title" required defaultValue={data.exam.title} /></label>
+      <label><span className="label mb-1 text-[11px]">想定大学</span><select className="input h-9 min-h-9 text-[13px]" name="targetUniversity" defaultValue={data.exam.targetUniversity || ""}><option value="">指定なし</option>{facets.universities.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+      <div className="grid grid-cols-2 gap-2">
+        <label><span className="label mb-1 text-[11px]">試験時間</span><input className="input h-9 min-h-9 text-[13px]" name="durationMinutes" type="number" min="1" max="600" defaultValue={data.exam.durationMinutes} /></label>
+        <label><span className="label mb-1 text-[11px]">状態</span><select className="input h-9 min-h-9 text-[13px]" name="status" defaultValue={data.exam.status}><option value="DRAFT">編集中</option><option value="READY" disabled={!complete}>完成</option></select></label>
+        <label><span className="label mb-1 text-[11px]">用紙</span><select className="input h-9 min-h-9 text-[13px]" name="paperSize" defaultValue={paper.paperSize}><option value="B5">B5</option><option value="A4">A4</option></select></label>
+        <label><span className="label mb-1 text-[11px]">段組</span><select className="input h-9 min-h-9 text-[13px]" name="columns" defaultValue={String(paper.columns)}><option value="1">1段</option><option value="2">2段</option></select></label>
+        <label><span className="label mb-1 text-[11px]">文字 pt</span><input className="input h-9 min-h-9 text-[13px]" name="fontSize" type="number" min="9" max="14" defaultValue={paper.fontSize} /></label>
+        <label><span className="label mb-1 text-[11px]">余白 mm</span><input className="input h-9 min-h-9 text-[13px]" name="marginMm" type="number" min="8" max="35" defaultValue={paper.marginMm} /></label>
       </div>
+      <div className="space-y-1.5 text-[12px]">
+        <label className="flex items-center gap-2"><input type="checkbox" name="showPageNumbers" defaultChecked={paper.showPageNumbers} />ページ番号を入れる</label>
+        <label className="flex items-center gap-2"><input type="checkbox" name="pageBreakPerProblem" defaultChecked={paper.pageBreakPerProblem} />問題ごとに改ページ</label>
+      </div>
+      <button className="btn-primary h-9 min-h-9 w-full text-[13px]" type="submit">設定を保存</button>
+    </form>
+    <div className="mt-3 flex items-center justify-between border-t border-line pt-2.5">
+      <form action={duplicateMockExamAction.bind(null, id)}><button className="text-[11px] font-semibold text-navy underline underline-offset-4" type="submit">この模試を複製</button></form>
+      <form action={archiveMockExamAction.bind(null, id)}><button className="text-[11px] text-muted underline underline-offset-4" type="submit">アーカイブ</button></form>
     </div>
   </>;
+
+  // 採用や大問の切り替えでも絞り込みを保つための共通クエリ。
+  const keepQuery = hrefWith({ slot: undefined, candidatePage: undefined }).split("?")[1] || "";
+
+  return <div className="flex min-h-0 flex-col xl:h-screen" id="workspace">
+    <header className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-b border-line bg-white px-4 py-2.5">
+      <div className="min-w-0">
+        <p className="text-[10px] font-semibold tracking-[0.08em] text-muted">模試ビルダー</p>
+        <h1 className="truncate text-[15px] font-bold text-navy">{data.exam.title}</h1>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1 text-[11px] text-muted">
+        <span>配置 <strong className="tabular-nums text-navy">{assigned.length}/{data.items.length}</strong></span>
+        <span>想定 <strong className="tabular-nums text-navy">{totalMinutes}分</strong></span>
+        <span>平均難易度 <strong className="tabular-nums text-navy">{averageDifficulty ? averageDifficulty.toFixed(1) : "—"}</strong></span>
+        {duplicateUse > 0 && <span>他模試と重複 <strong className="tabular-nums text-navy">{duplicateUse}問</strong></span>}
+        <span className="h-1 w-20 overflow-hidden rounded-sm bg-slate-100"><span className="block h-full bg-navy" style={{ width: `${Math.round((assigned.length / Math.max(data.items.length, 1)) * 100)}%` }} /></span>
+      </div>
+      <span className="ml-auto shrink-0 border border-line bg-surface px-2 py-1 text-[11px] font-bold text-navy">{mockStatusLabels[data.exam.status]}</span>
+    </header>
+
+    {!mathSubject || !candidateData ? <div className="grid flex-1 place-items-center p-10 text-center">
+      <div>
+        <h2 className="font-bold text-navy">{mathSubject ? "大問を読み込めませんでした" : "数学科目が登録されていません"}</h2>
+        <p className="mt-2 text-sm text-muted">{mathSubject ? "ページを再読み込みしてください。" : "DBセットアップを確認してください。"}</p>
+      </div>
+    </div> : <div className="grid min-h-0 flex-1 xl:grid-cols-[212px_minmax(0,1fr)]">
+      <aside className="flex min-h-0 flex-col border-b border-line bg-white xl:border-r xl:border-b-0">
+        <div className="flex shrink-0 items-center justify-between px-3 py-2">
+          <p className="text-[10px] font-semibold tracking-[0.08em] text-muted">大問構成</p>
+          <form action={addMockSlotAction.bind(null, id)}><button aria-label="大問を追加" className="wb-icon" disabled={data.items.length >= 20} type="submit">＋</button></form>
+        </div>
+        <ol className="wb-scroll flex-1 px-1.5 pb-2">
+          {data.items.map(({ item, problem }, index) => {
+            const active = selectedItem === item.id;
+            return <li key={item.id}>
+              <Link
+                className={`flex items-start gap-2 rounded-md border-l-2 px-2 py-1.5 transition ${active ? "border-navy bg-blue-50" : "border-transparent hover:bg-surface"}`}
+                href={hrefWith({ slot: item.id, candidatePage: undefined })}
+              >
+                <span className={`mt-px grid size-5 shrink-0 place-items-center rounded text-[10px] font-bold ${problem ? "bg-navy text-white" : "border border-dashed border-line text-muted"}`}>{item.position}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[12px] font-semibold text-navy">{problem?.title || problem?.code || "未選択"}</span>
+                  <span className="block truncate text-[10px] text-muted">{problem ? `難易度${problem.difficulty} · ${problem.estimatedMinutes}分` : "候補から選ぶ"}</span>
+                </span>
+              </Link>
+              {active && <div className="mt-1 mb-2 ml-7 space-y-1.5">
+                <div className="flex gap-1">
+                  <form action={moveSlotProblemAction.bind(null, id, item.id, "up")}><button aria-label={`第${item.position}問を上へ`} className="wb-icon" disabled={index === 0} type="submit">↑</button></form>
+                  <form action={moveSlotProblemAction.bind(null, id, item.id, "down")}><button aria-label={`第${item.position}問を下へ`} className="wb-icon" disabled={index === data.items.length - 1} type="submit">↓</button></form>
+                </div>
+                <details>
+                  <summary className="cursor-pointer text-[10px] font-semibold text-muted">この大問の自動選定条件</summary>
+                  <form action={updateSlotFiltersAction.bind(null, id, item.id)} className="mt-2 space-y-1.5">
+                    <select aria-label="分野" className="input h-8 min-h-8 px-2 text-[11px]" name="fieldFilter" defaultValue={item.fieldFilter || ""}><option value="">分野を指定しない</option>{facets.fields.map((value) => <option key={value} value={value}>{value}</option>)}</select>
+                    <select aria-label="サブ分野" className="input h-8 min-h-8 px-2 text-[11px]" name="subfieldFilter" defaultValue={item.subfieldFilter || ""}><option value="">サブ分野を指定しない</option>{facets.subfields.map((value) => <option key={value} value={value}>{value}</option>)}</select>
+                    <select aria-label="難易度" className="input h-8 min-h-8 px-2 text-[11px]" name="difficultyMin" defaultValue={item.difficultyMin || ""}><option value="">難易度を指定しない</option>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>難易度{value}</option>)}</select>
+                    <input name="difficultyMax" type="hidden" value={item.difficultyMin || ""} />
+                    <select aria-label="使用履歴" className="input h-8 min-h-8 px-2 text-[11px]" name="unusedOnly" defaultValue={item.unusedOnly ? "true" : ""}><option value="">使用履歴を問わない</option><option value="true">未使用のみ</option></select>
+                    <button className="btn-secondary h-8 min-h-8 w-full text-[11px]" type="submit">条件を保存</button>
+                  </form>
+                </details>
+              </div>}
+            </li>;
+          })}
+        </ol>
+        <div className="shrink-0 space-y-1.5 border-t border-line p-2">
+          {emptyCount > 0 && <form action={autoAssignEmptySlotsAction.bind(null, id)}><button className="btn-secondary h-8 min-h-8 w-full px-2 text-[12px]" type="submit">空欄を自動で仮配置</button></form>}
+          {lastSlotIsEmpty && data.items.length > 1 && <form action={removeLastEmptyMockSlotAction.bind(null, id)}><button className="wb-ghost w-full" type="submit">末尾の空欄を削除</button></form>}
+        </div>
+      </aside>
+
+      <MockWorkbench
+        key={hrefWith({})}
+        assignAction={assignProblemFromFormAction.bind(null, id)}
+        assigned={activeSlot?.problem ? toWorkbenchProblem(activeSlot.problem, null) : null}
+        candidates={candidateData.candidates.rows.map(({ problem, usageCount }) => toWorkbenchProblem(problem, Number(usageCount)))}
+        clearAction={activeSlot?.problem ? clearSlotAction.bind(null, id, activeSlot.item.id) : null}
+        emptyMessage="条件を1つ外すと、候補を広げられます。"
+        keepQuery={keepQuery}
+        filters={<CandidateFilterBar
+          action={`/admin/mocks/${id}`}
+          fields={facets.fields}
+          resetHref={`/admin/mocks/${id}?slot=${candidateData.slot.id}`}
+          resultCount={candidateData.candidates.total}
+          selected={{
+            keyword: one(query.candidateQ),
+            university: one(query.candidateUniversity),
+            field: one(query.candidateField),
+            subfield: one(query.candidateSubfield),
+            difficultyMode: candidateDifficultyMode(query),
+            timeBand: one(query.candidateTimeBand),
+            usage: one(query.candidateUsage),
+            verification: one(query.candidateVerification),
+            sort: candidateData.filters.sort || "least-used",
+          }}
+          slotId={candidateData.slot.id}
+          subfields={facets.subfields}
+          timeOptions={timeBandOptions.map(({ value, label }) => ({ value, label }))}
+          universities={facets.universities}
+          universityProfiles={universityProfiles}
+          verificationOptions={Object.entries(verificationLabels).map(([value, label]) => ({ value, label }))}
+        />}
+        pager={pager}
+        printHref={`/admin/print/${id}?mode=questions`}
+        settings={settingsPanel}
+        slot={{ id: candidateData.slot.id, position: candidateData.slot.position }}
+      />
+    </div>}
+  </div>;
 }
