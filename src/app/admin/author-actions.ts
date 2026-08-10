@@ -1,12 +1,12 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
-import { and, eq, ne } from "drizzle-orm";
+import { and, asc, eq, isNull, ne } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
-import { getMockCandidates, getMockTemplate } from "@/lib/data/authoring";
+import { getMathSubject, getMockCandidates, getMockTemplate } from "@/lib/data/authoring";
 import { getDb } from "@/lib/db";
 import { changeLogs, defaultPaperSettings, mockExamItems, mockExams, mockTemplates, problems, type PaperSettings } from "@/lib/db/schema";
 
@@ -124,6 +124,29 @@ export async function createMockExamAction(formData: FormData) {
   redirect(`/admin/mocks/${examId}`);
 }
 
+export async function createMathMockExamAction() {
+  await requireAdmin();
+  const mathSubject = await getMathSubject();
+  if (!mathSubject) throw new Error("数学科目が登録されていません。先にDBセットアップを確認してください。");
+  const db = getDb();
+  const examId = randomUUID();
+  const questionCount = 4;
+  await db.batch([
+    db.insert(mockExams).values({
+      id: examId,
+      title: "数学予想模試（編集中）",
+      durationMinutes: 150,
+      questionCount,
+      subjectId: mathSubject.id,
+      paperSettings: defaultPaperSettings,
+    }),
+    db.insert(mockExamItems).values(Array.from({ length: questionCount }, (_, index) => ({ mockExamId: examId, position: index + 1 }))),
+  ]);
+  revalidatePath("/admin");
+  revalidatePath("/admin/mocks");
+  redirect(`/admin/mocks/${examId}`);
+}
+
 export async function updateMockSettingsAction(id: string, formData: FormData) {
   await requireAdmin();
   const title = text(formData, "title").trim();
@@ -165,21 +188,28 @@ export async function updateSlotFiltersAction(examId: string, itemId: string, fo
 export async function assignProblemAction(examId: string, itemId: string, problemId: string) {
   await requireAdmin();
   const db = getDb();
-  const [[candidate], [duplicate]] = await Promise.all([
+  const [[candidate], [duplicate], [currentSlot]] = await Promise.all([
     db.select({ id: problems.id }).from(problems).where(and(eq(problems.id, problemId), eq(problems.isArchived, false))).limit(1),
     db.select({ id: mockExamItems.id }).from(mockExamItems).where(and(
       eq(mockExamItems.mockExamId, examId),
       eq(mockExamItems.problemId, problemId),
       ne(mockExamItems.id, itemId),
     )).limit(1),
+    db.select({ id: mockExamItems.id, position: mockExamItems.position }).from(mockExamItems).where(and(eq(mockExamItems.id, itemId), eq(mockExamItems.mockExamId, examId))).limit(1),
   ]);
   if (!candidate) throw new Error("問題が見つからないか、アーカイブされています。");
+  if (!currentSlot) throw new Error("大問が見つかりません。");
   if (duplicate) throw new Error("同じ問題は一つの模試に重複配置できません。");
   await db.update(mockExamItems).set({ problemId, updatedAt: new Date() }).where(and(eq(mockExamItems.id, itemId), eq(mockExamItems.mockExamId, examId)));
   await db.update(mockExams).set({ updatedAt: new Date() }).where(eq(mockExams.id, examId));
+  const emptySlots = await db.select({ id: mockExamItems.id, position: mockExamItems.position })
+    .from(mockExamItems)
+    .where(and(eq(mockExamItems.mockExamId, examId), isNull(mockExamItems.problemId)))
+    .orderBy(asc(mockExamItems.position));
+  const nextSlot = emptySlots.find((slot) => slot.position > currentSlot.position) || emptySlots[0];
   revalidatePath(`/admin/mocks/${examId}`);
   revalidatePath("/admin/problems");
-  redirect(`/admin/mocks/${examId}#slot-${itemId}`);
+  redirect(`/admin/mocks/${examId}?slot=${nextSlot?.id || itemId}#candidates`);
 }
 
 export async function clearSlotAction(examId: string, itemId: string) {

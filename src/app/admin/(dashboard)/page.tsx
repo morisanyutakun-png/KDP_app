@@ -7,8 +7,8 @@ import { formatDate } from "@/lib/utils";
 export const dynamic = "force-dynamic";
 
 const workLinks = [
-  { href: "/admin/problems", title: "問題を探す・登録する", description: "Problem Bankの検索、登録、編集" },
-  { href: "/admin/mocks/new", title: "新しい模試を作成する", description: "テンプレートまたは基本設定から開始" },
+  { href: "/admin/problems", title: "数学問題を探す・登録する", description: "分野や難易度から問題文を検索" },
+  { href: "/admin/mocks/new", title: "新しい数学模試を作成する", description: "入力なしですぐに問題選択を開始" },
   { href: "/admin/templates", title: "テンプレートを管理する", description: "大問数、試験時間、紙面設定を保存" },
 ];
 
@@ -16,14 +16,14 @@ export default async function AuthoringDashboardPage() {
   const data = await getAuthoringOverview();
   return <>
     <AdminPageHeader
-      eyebrow="制作管理"
-      title="教材制作ホーム"
-      description="問題の登録から模試の構成、印刷用紙面の出力までを管理します。"
-      action={<div className="flex gap-2"><Link className="btn-secondary" href="/admin/problems/new">問題を登録</Link><Link className="btn-primary" href="/admin/mocks/new">模試を作成</Link></div>}
+      eyebrow="数学予想問題集"
+      title="数学模試の制作ホーム"
+      description="数学問題を検索し、問題文を比較しながら模試を構成します。紙面確認は最後に行います。"
+      action={<div className="flex gap-2"><Link className="btn-secondary" href="/admin/problems/new">数学問題を登録</Link><Link className="btn-primary" href="/admin/mocks/new">数学模試を作成</Link></div>}
     />
     <div className="workbench space-y-6">
       <section aria-label="登録状況" className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="登録問題" value={data.problemTotal} note="アーカイブを除く" />
+        <MetricCard label="登録数学問題" value={data.problemTotal} note="アーカイブを除く" />
         <MetricCard label="検証済み" value={data.verifiedTotal} note="紙面採用の候補" />
         <MetricCard label="未使用問題" value={data.unusedTotal} note="模試で未採用" />
         <MetricCard label="制作中の模試" value={data.mockTotal} note="完成・編集中を含む" />
@@ -40,7 +40,7 @@ export default async function AuthoringDashboardPage() {
               <span className="min-w-0"><strong className="block truncate text-sm font-semibold text-navy">{exam.title}</strong><span className="mt-1 block text-xs text-muted">{subjectName || "科目未設定"} · {exam.questionCount}問 · {exam.durationMinutes}分 · {formatDate(exam.updatedAt)}</span></span>
               <span className="shrink-0 border border-line bg-white px-2 py-1 text-xs text-muted">{mockStatusLabels[exam.status]}</span>
             </Link>
-          ))}</div> : <div className="px-5 py-12 text-center"><p className="text-sm font-semibold text-navy">模試はまだ登録されていません</p><p className="mt-1 text-xs text-muted">問題数と試験時間を設定して作成を始めます。</p><Link className="btn-primary mt-4" href="/admin/mocks/new">模試を作成</Link></div>}
+          ))}</div> : <div className="px-5 py-12 text-center"><p className="text-sm font-semibold text-navy">数学模試はまだ登録されていません</p><p className="mt-1 text-xs text-muted">作成すると第1問の候補問題がすぐに表示されます。</p><Link className="btn-primary mt-4" href="/admin/mocks/new">数学模試を作成</Link></div>}
         </section>
 
         <section className="card overflow-hidden">

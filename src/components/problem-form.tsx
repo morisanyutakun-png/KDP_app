@@ -35,7 +35,9 @@ export function ProblemForm({
         <div className="border-b border-line px-5 py-4"><h2 className="font-bold text-navy">基本情報</h2><p className="mt-1 text-xs text-muted">検索と候補抽出に使う情報です。既存の表記に揃えると絞り込みやすくなります。</p></div>
         <div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-4">
           <label className="sm:col-span-2 lg:col-span-4"><span className="label">管理用タイトル *</span><input className="input" name="title" required maxLength={120} defaultValue={problem?.title || ""} placeholder="例: 三次関数の極値と接線" /><span className="mt-1.5 block text-xs text-muted">一覧で識別する短い名称です。問題用紙には印刷されません。</span></label>
-          <label><span className="label">科目</span><select className="input" name="subjectId" defaultValue={problem?.subjectId || ""}><option value="">未分類</option>{subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}</select></label>
+          {subjects.length === 1
+            ? <label><span className="label">科目</span><span className="input block bg-surface font-bold text-navy">{subjects[0].name}</span><input name="subjectId" type="hidden" value={subjects[0].id} /></label>
+            : <label><span className="label">科目</span><select className="input" name="subjectId" defaultValue={problem?.subjectId || ""}><option value="">未分類</option>{subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}</select></label>}
           <label><span className="label">分野 *</span><input className="input" name="field" list="problem-field-options" required defaultValue={problem?.field} placeholder="微積分" /></label>
           <label><span className="label">サブ分野</span><input className="input" name="subfield" list="problem-subfield-options" defaultValue={problem?.subfield || ""} placeholder="微分法" /></label>
           <label><span className="label">想定大学・レベル</span><input className="input" name="targetUniversity" list="problem-university-options" defaultValue={problem?.targetUniversity || ""} placeholder="名古屋大学" /></label>

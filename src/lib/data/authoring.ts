@@ -26,6 +26,7 @@ export type ProblemSearch = {
 export type MockExamSearch = {
   q?: string;
   subjectId?: string;
+  targetUniversity?: string;
   status?: "DRAFT" | "READY";
   page?: number;
   limit?: number;
@@ -38,11 +39,11 @@ function problemConditions(filters: ProblemSearch) {
     conditions.push(or(ilike(problems.code, term), ilike(problems.title, term), ilike(problems.statement, term), ilike(problems.field, term), ilike(problems.subfield, term))!);
   }
   if (filters.subjectId) conditions.push(eq(problems.subjectId, filters.subjectId));
-  if (filters.field) conditions.push(ilike(problems.field, `%${filters.field}%`));
-  if (filters.subfield) conditions.push(ilike(problems.subfield, `%${filters.subfield}%`));
+  if (filters.field) conditions.push(eq(problems.field, filters.field));
+  if (filters.subfield) conditions.push(eq(problems.subfield, filters.subfield));
   if (filters.difficultyMin) conditions.push(gte(problems.difficulty, filters.difficultyMin));
   if (filters.difficultyMax) conditions.push(lte(problems.difficulty, filters.difficultyMax));
-  if (filters.targetUniversity) conditions.push(ilike(problems.targetUniversity, `%${filters.targetUniversity}%`));
+  if (filters.targetUniversity) conditions.push(eq(problems.targetUniversity, filters.targetUniversity));
   if (filters.timeMin) conditions.push(gte(problems.estimatedMinutes, filters.timeMin));
   if (filters.timeMax) conditions.push(lte(problems.estimatedMinutes, filters.timeMax));
   if (filters.verification) conditions.push(eq(problems.verificationStatus, filters.verification));
@@ -56,14 +57,23 @@ export async function getSubjects() {
   return getDb().select().from(subjects).orderBy(asc(subjects.name));
 }
 
-export async function getProblemFacets(subjectId?: string) {
+export async function getMathSubject() {
+  const [subject] = await getDb().select().from(subjects)
+    .where(or(eq(subjects.slug, "mathematics"), eq(subjects.name, "数学")))
+    .orderBy(asc(subjects.name))
+    .limit(1);
+  return subject || null;
+}
+
+export async function getProblemFacets(subjectId?: string, field?: string) {
   const db = getDb();
   const baseConditions = subjectId
     ? and(eq(problems.isArchived, false), eq(problems.subjectId, subjectId))
     : eq(problems.isArchived, false);
+  const subfieldConditions = field ? and(baseConditions, eq(problems.field, field)) : baseConditions;
   const [fieldRows, subfieldRows, universityRows] = await Promise.all([
     db.selectDistinct({ value: problems.field }).from(problems).where(baseConditions).orderBy(asc(problems.field)),
-    db.selectDistinct({ value: problems.subfield }).from(problems).where(and(baseConditions, isNotNull(problems.subfield))).orderBy(asc(problems.subfield)),
+    db.selectDistinct({ value: problems.subfield }).from(problems).where(and(subfieldConditions, isNotNull(problems.subfield))).orderBy(asc(problems.subfield)),
     db.selectDistinct({ value: problems.targetUniversity }).from(problems).where(and(baseConditions, isNotNull(problems.targetUniversity))).orderBy(asc(problems.targetUniversity)),
   ]);
   return {
@@ -113,12 +123,16 @@ export async function getProblem(id: string) {
 
 export async function getAuthoringOverview() {
   const db = getDb();
+  const mathSubject = await getMathSubject();
+  if (!mathSubject) {
+    return { problemTotal: 0, verifiedTotal: 0, mockTotal: 0, unusedTotal: 0, recentMocks: [] };
+  }
   const [[problemTotal], [verifiedTotal], [mockTotal], [unusedTotal], recentMocks] = await Promise.all([
-    db.select({ value: count() }).from(problems).where(eq(problems.isArchived, false)),
-    db.select({ value: count() }).from(problems).where(and(eq(problems.isArchived, false), eq(problems.verificationStatus, "VERIFIED"))),
-    db.select({ value: count() }).from(mockExams).where(ne(mockExams.status, "ARCHIVED")),
-    db.select({ value: count() }).from(problems).where(and(eq(problems.isArchived, false), sql`not exists (select 1 from ${mockExamItems} usage_item where usage_item.problem_id = ${problems.id})`)),
-    db.select({ exam: mockExams, subjectName: subjects.name }).from(mockExams).leftJoin(subjects, eq(mockExams.subjectId, subjects.id)).where(ne(mockExams.status, "ARCHIVED")).orderBy(desc(mockExams.updatedAt)).limit(6),
+    db.select({ value: count() }).from(problems).where(and(eq(problems.isArchived, false), eq(problems.subjectId, mathSubject.id))),
+    db.select({ value: count() }).from(problems).where(and(eq(problems.isArchived, false), eq(problems.subjectId, mathSubject.id), eq(problems.verificationStatus, "VERIFIED"))),
+    db.select({ value: count() }).from(mockExams).where(and(ne(mockExams.status, "ARCHIVED"), eq(mockExams.subjectId, mathSubject.id))),
+    db.select({ value: count() }).from(problems).where(and(eq(problems.isArchived, false), eq(problems.subjectId, mathSubject.id), sql`not exists (select 1 from ${mockExamItems} usage_item where usage_item.problem_id = ${problems.id})`)),
+    db.select({ exam: mockExams, subjectName: subjects.name }).from(mockExams).leftJoin(subjects, eq(mockExams.subjectId, subjects.id)).where(and(ne(mockExams.status, "ARCHIVED"), eq(mockExams.subjectId, mathSubject.id))).orderBy(desc(mockExams.updatedAt)).limit(6),
   ]);
   return { problemTotal: problemTotal.value, verifiedTotal: verifiedTotal.value, mockTotal: mockTotal.value, unusedTotal: unusedTotal.value, recentMocks };
 }
@@ -133,6 +147,7 @@ export async function listMockExams(filters: MockExamSearch = {}) {
     conditions.push(or(ilike(mockExams.title, term), ilike(mockExams.targetUniversity, term), ilike(subjects.name, term))!);
   }
   if (filters.subjectId) conditions.push(eq(mockExams.subjectId, filters.subjectId));
+  if (filters.targetUniversity) conditions.push(eq(mockExams.targetUniversity, filters.targetUniversity));
   if (filters.status) conditions.push(eq(mockExams.status, filters.status));
   const where = and(...conditions);
   const assigned = sql<number>`(select count(*)::int from ${mockExamItems} assigned_item where assigned_item.mock_exam_id = ${mockExams.id} and assigned_item.problem_id is not null)`;
@@ -148,6 +163,15 @@ export async function listMockExams(filters: MockExamSearch = {}) {
       .where(where),
   ]);
   return { rows, total: totals[0]?.value || 0, page, limit };
+}
+
+export async function getMockExamFacets(subjectId?: string) {
+  const conditions = [ne(mockExams.status, "ARCHIVED"), isNotNull(mockExams.targetUniversity)];
+  if (subjectId) conditions.push(eq(mockExams.subjectId, subjectId));
+  const rows = await getDb().selectDistinct({ value: mockExams.targetUniversity }).from(mockExams)
+    .where(and(...conditions))
+    .orderBy(asc(mockExams.targetUniversity));
+  return { universities: rows.map((row) => row.value).filter((value): value is string => Boolean(value)) };
 }
 
 export async function getMockExam(id: string) {

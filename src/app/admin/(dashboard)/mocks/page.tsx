@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AdminPageHeader } from "@/components/admin-ui";
 import { mockStatusLabels } from "@/lib/authoring-labels";
-import { getSubjects, listMockExams, type MockExamSearch } from "@/lib/data/authoring";
+import { getMathSubject, getMockExamFacets, listMockExams, type MockExamSearch } from "@/lib/data/authoring";
 import { formatDate } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -10,15 +10,19 @@ type Query = Record<string, string | string[] | undefined>;
 const one = (value: string | string[] | undefined) => Array.isArray(value) ? value[0] : value || "";
 
 export default async function MockExamsPage({ searchParams }: { searchParams: Promise<Query> }) {
-  const query = await searchParams;
+  const [query, mathSubject] = await Promise.all([searchParams, getMathSubject()]);
   const rawStatus = one(query.status);
   const filters: MockExamSearch = {
-    q: one(query.q) || undefined,
-    subjectId: one(query.subjectId) || undefined,
+    subjectId: mathSubject?.id,
+    targetUniversity: one(query.targetUniversity) || undefined,
     status: rawStatus === "DRAFT" || rawStatus === "READY" ? rawStatus : undefined,
     page: Number(one(query.page)) || 1,
   };
-  const [{ rows, total, page, limit }, subjects] = await Promise.all([listMockExams(filters), getSubjects()]);
+  const [result, facets] = await Promise.all([
+    mathSubject ? listMockExams(filters) : Promise.resolve({ rows: [], total: 0, page: 1, limit: 24 }),
+    mathSubject ? getMockExamFacets(mathSubject.id) : Promise.resolve({ universities: [] }),
+  ]);
+  const { rows, total, page, limit } = result;
   const pages = Math.max(Math.ceil(total / limit), 1);
   const pageHref = (target: number) => {
     const params = new URLSearchParams();
@@ -28,11 +32,10 @@ export default async function MockExamsPage({ searchParams }: { searchParams: Pr
   };
 
   return <>
-    <AdminPageHeader eyebrow="模試制作" title="模試・問題集" description={`${total}件。原稿から登録した模試の再編集と、新しい構成の作成ができます。`} action={<Link className="btn-primary" href="/admin/mocks/new">新しい模試</Link>} />
+    <AdminPageHeader eyebrow="数学専用" title="数学予想模試" description={`${total}件。数学の問題構成に集中して管理します。`} action={<Link className="btn-primary" href="/admin/mocks/new">新しい数学模試</Link>} />
     <div className="workbench space-y-5">
-      <form className="card grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_auto]" method="get">
-        <label><span className="label">模試名・大学</span><input className="input" name="q" defaultValue={filters.q || ""} placeholder="名古屋大学、共通テスト、第3回…" /></label>
-        <label><span className="label">科目</span><select className="input" name="subjectId" defaultValue={filters.subjectId || ""}><option value="">すべて</option>{subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}</select></label>
+      <form className="card grid gap-3 p-4 sm:grid-cols-[minmax(220px,1fr)_180px_auto]" method="get">
+        <label><span className="label">想定大学</span><select className="input" name="targetUniversity" defaultValue={filters.targetUniversity || ""}><option value="">すべての大学</option>{facets.universities.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
         <label><span className="label">状態</span><select className="input" name="status" defaultValue={filters.status || ""}><option value="">すべて</option><option value="DRAFT">編集中</option><option value="READY">完成</option></select></label>
         <div className="flex items-end gap-2"><button className="btn-primary" type="submit">絞り込む</button><Link className="btn-secondary" href="/admin/mocks">解除</Link></div>
       </form>

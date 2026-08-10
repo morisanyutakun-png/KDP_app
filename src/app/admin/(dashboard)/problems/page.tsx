@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AdminPageHeader } from "@/components/admin-ui";
-import { excerpt, verificationLabels } from "@/lib/authoring-labels";
-import { getProblemFacets, getSubjects, searchProblems, type ProblemSearch } from "@/lib/data/authoring";
+import { excerpt, getTimeBandRange, timeBandOptions, verificationLabels } from "@/lib/authoring-labels";
+import { getMathSubject, getProblemFacets, searchProblems, type ProblemSearch } from "@/lib/data/authoring";
 
 export const dynamic = "force-dynamic";
 
@@ -9,23 +9,35 @@ type Query = Record<string, string | string[] | undefined>;
 const one = (value: string | string[] | undefined) => Array.isArray(value) ? value[0] : value || "";
 
 export default async function ProblemBankPage({ searchParams }: { searchParams: Promise<Query> }) {
-  const query = await searchParams;
+  const [query, mathSubject] = await Promise.all([searchParams, getMathSubject()]);
+  const difficulty = Number(one(query.difficulty)) || undefined;
+  const timeBand = getTimeBandRange(one(query.timeBand));
+  const usage = one(query.usage);
+  const verification = one(query.verification);
+  const sort = one(query.sort);
   const filters: ProblemSearch = {
-    q: one(query.q) || undefined,
-    subjectId: one(query.subjectId) || undefined,
+    subjectId: mathSubject?.id,
     field: one(query.field) || undefined,
     subfield: one(query.subfield) || undefined,
     targetUniversity: one(query.targetUniversity) || undefined,
-    difficultyMin: Number(one(query.difficultyMin)) || undefined,
-    difficultyMax: Number(one(query.difficultyMax)) || undefined,
-    timeMin: Number(one(query.timeMin)) || undefined,
-    timeMax: Number(one(query.timeMax)) || undefined,
-    usage: one(query.usage) as ProblemSearch["usage"] || undefined,
-    verification: one(query.verification) as ProblemSearch["verification"] || undefined,
-    sort: one(query.sort) as ProblemSearch["sort"] || "recent",
+    difficultyMin: difficulty,
+    difficultyMax: difficulty,
+    timeMin: timeBand?.min,
+    timeMax: timeBand?.max,
+    usage: usage === "used" || usage === "unused" ? usage : undefined,
+    verification: ["DRAFT", "REVIEWING", "VERIFIED", "NEEDS_REVISION"].includes(verification)
+      ? verification as ProblemSearch["verification"]
+      : undefined,
+    sort: ["recent", "difficulty-asc", "difficulty-desc", "time-asc", "least-used"].includes(sort)
+      ? sort as ProblemSearch["sort"]
+      : "recent",
     page: Number(one(query.page)) || 1,
   };
-  const [{ rows, total, page, limit }, subjectOptions, facets] = await Promise.all([searchProblems(filters), getSubjects(), getProblemFacets(filters.subjectId)]);
+  const [result, facets] = await Promise.all([
+    mathSubject ? searchProblems(filters) : Promise.resolve({ rows: [], total: 0, page: 1, limit: 30 }),
+    mathSubject ? getProblemFacets(mathSubject.id) : Promise.resolve({ fields: [], subfields: [], universities: [] }),
+  ]);
+  const { rows, total, page, limit } = result;
   const pages = Math.max(Math.ceil(total / limit), 1);
   const pageHref = (target: number) => {
     const params = new URLSearchParams();
@@ -34,28 +46,20 @@ export default async function ProblemBankPage({ searchParams }: { searchParams: 
     return `/admin/problems?${params}`;
   };
   return <>
-    <AdminPageHeader eyebrow="問題管理" title="問題データベース" description={`${total}問。条件を組み合わせて候補をすばやく絞り込めます。`} action={<Link className="btn-primary" href="/admin/problems/new">問題を登録</Link>} />
+    <AdminPageHeader eyebrow="数学専用" title="数学問題データベース" description={`${total}問。登録済みの選択肢だけで絞り込みます。`} action={<Link className="btn-primary" href="/admin/problems/new">数学問題を登録</Link>} />
     <div className="workbench space-y-5">
       <form className="card p-4" method="get">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(280px,2fr)_1fr_1fr_180px_auto]">
-          <label><span className="label text-xs">キーワード</span><input className="input" name="q" defaultValue={filters.q} placeholder="タイトル・問題ID・本文" /></label>
-          <label><span className="label text-xs">科目</span><select className="input" name="subjectId" defaultValue={filters.subjectId || ""}><option value="">すべての科目</option>{subjectOptions.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}</select></label>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <label><span className="label text-xs">分野</span><select className="input" name="field" defaultValue={filters.field || ""}><option value="">すべての分野</option>{facets.fields.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+          <label><span className="label text-xs">サブ分野</span><select className="input" name="subfield" defaultValue={filters.subfield || ""}><option value="">すべてのサブ分野</option>{facets.subfields.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+          <label><span className="label text-xs">想定大学</span><select className="input" name="targetUniversity" defaultValue={filters.targetUniversity || ""}><option value="">すべての大学</option>{facets.universities.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+          <label><span className="label text-xs">難易度</span><select className="input" name="difficulty" defaultValue={difficulty || ""}><option value="">すべて</option>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>難易度 {value}</option>)}</select></label>
+          <label><span className="label text-xs">想定時間</span><select className="input" name="timeBand" defaultValue={one(query.timeBand)}><option value="">すべて</option>{timeBandOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+          <label><span className="label text-xs">使用履歴</span><select className="input" name="usage" defaultValue={filters.usage || ""}><option value="">すべて</option><option value="unused">未使用のみ</option><option value="used">使用済みのみ</option></select></label>
+          <label><span className="label text-xs">検証状態</span><select className="input" name="verification" defaultValue={filters.verification || ""}><option value="">すべて</option>{Object.entries(verificationLabels).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>
           <label><span className="label text-xs">並び順</span><select className="input" name="sort" defaultValue={filters.sort || "recent"}><option value="recent">更新が新しい順</option><option value="least-used">使用回数が少ない順</option><option value="time-asc">短時間順</option><option value="difficulty-asc">易しい順</option><option value="difficulty-desc">難しい順</option></select></label>
-          <div className="flex items-end"><button className="btn-primary w-full" type="submit">絞り込む</button></div>
         </div>
-        <details className="mt-3 border-t border-line pt-3">
-          <summary className="cursor-pointer text-xs font-bold text-navy">詳細条件を設定</summary>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
-            <label><span className="label text-xs">サブ分野</span><select className="input" name="subfield" defaultValue={filters.subfield || ""}><option value="">すべて</option>{facets.subfields.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-            <label><span className="label text-xs">想定大学</span><input className="input" list="problem-university-options" name="targetUniversity" defaultValue={filters.targetUniversity} /></label>
-            <label><span className="label text-xs">難易度</span><span className="grid grid-cols-[1fr_auto_1fr] items-center gap-2"><select aria-label="難易度の下限" className="input" name="difficultyMin" defaultValue={filters.difficultyMin || ""}><option value="">1</option>{[2,3,4,5].map((v) => <option key={v} value={v}>{v}</option>)}</select><span className="text-muted">–</span><select aria-label="難易度の上限" className="input" name="difficultyMax" defaultValue={filters.difficultyMax || ""}><option value="">5</option>{[1,2,3,4].map((v) => <option key={v} value={v}>{v}</option>)}</select></span></label>
-            <label><span className="label text-xs">想定時間（分）</span><span className="grid grid-cols-[1fr_auto_1fr] items-center gap-2"><input aria-label="想定時間の下限" className="input" type="number" min="1" name="timeMin" defaultValue={filters.timeMin} /><span className="text-muted">–</span><input aria-label="想定時間の上限" className="input" type="number" min="1" name="timeMax" defaultValue={filters.timeMax} /></span></label>
-            <label><span className="label text-xs">使用履歴</span><select className="input" name="usage" defaultValue={filters.usage || ""}><option value="">すべて</option><option value="unused">未使用のみ</option><option value="used">使用済みのみ</option></select></label>
-            <label><span className="label text-xs">検証状態</span><select className="input" name="verification" defaultValue={filters.verification || ""}><option value="">すべて</option>{Object.entries(verificationLabels).map(([value,label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-          </div>
-          <div className="mt-3 text-right"><Link className="text-xs font-bold text-muted underline" href="/admin/problems">すべての条件を解除</Link></div>
-        </details>
+        <div className="mt-4 flex gap-2"><button className="btn-primary" type="submit">この条件で絞り込む</button><Link className="btn-secondary" href="/admin/problems">条件を解除</Link></div>
       </form>
 
       <div className="card overflow-hidden">
@@ -63,6 +67,5 @@ export default async function ProblemBankPage({ searchParams }: { searchParams: 
       </div>
       {pages > 1 && <nav className="flex items-center justify-center gap-3"><Link aria-disabled={page <= 1} className={`btn-secondary ${page <= 1 ? "pointer-events-none opacity-40" : ""}`} href={pageHref(page - 1)}>← 前へ</Link><span className="text-sm font-bold text-muted">{page} / {pages}</span><Link aria-disabled={page >= pages} className={`btn-secondary ${page >= pages ? "pointer-events-none opacity-40" : ""}`} href={pageHref(page + 1)}>次へ →</Link></nav>}
     </div>
-    <datalist id="problem-university-options">{facets.universities.map((value) => <option key={value} value={value} />)}</datalist>
   </>;
 }
