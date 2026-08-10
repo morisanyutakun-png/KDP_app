@@ -70,10 +70,31 @@ button, a { -webkit-tap-highlight-color: transparent; }
   .math-content h3 { @apply mt-4 mb-2 text-lg font-bold text-navy; }
   .math-content ul { @apply my-3 list-disc pl-6; }
   .math-content ol { @apply my-3 list-decimal pl-6; }
+  .math-content ol > li { @apply my-3 pl-1; }
+  .math-content li::marker { color: var(--navy); font-weight: 700; }
   .math-content blockquote { @apply my-4 border-l-4 border-line pl-4 text-muted; }
   .math-content pre { @apply my-4 overflow-x-auto rounded-xl bg-slate-950 p-4 text-sm text-white; }
   .math-content code:not(pre code) { @apply rounded bg-slate-100 px-1.5 py-0.5 text-sm; }
   .math-content img { @apply my-4 max-w-full rounded-lg; }
+  .math-content .katex { font-size: 1.03em; }
+  .math-content .katex-display { @apply my-5 overflow-x-auto overflow-y-hidden py-1; }
+  .math-content .katex-display > .katex { min-width: max-content; }
+  .math-content .katex-error { color: var(--ink) !important; font-family: inherit; }
+  .math-content .math-answer-marker {
+    display: inline-flex;
+    min-width: 2rem;
+    height: 2rem;
+    align-items: center;
+    justify-content: center;
+    margin: 0 0.16rem;
+    padding: 0 0.4rem;
+    border: 1.5px solid var(--navy);
+    color: var(--navy);
+    font-size: 0.86em;
+    font-weight: 700;
+    line-height: 1;
+    vertical-align: -0.35rem;
+  }
 }
 
 .admin-shell .card { border-radius: 6px; box-shadow: none; }
