@@ -26,6 +26,8 @@ export const editionFormatEnum = pgEnum("edition_format", formatValues);
 export const importStatusEnum = pgEnum("import_status", ["PROCESSING", "COMPLETED", "FAILED"]);
 export const problemVerificationStatusEnum = pgEnum("problem_verification_status", ["DRAFT", "REVIEWING", "VERIFIED", "NEEDS_REVISION"]);
 export const mockExamStatusEnum = pgEnum("mock_exam_status", ["DRAFT", "READY", "ARCHIVED"]);
+/** USER=利用者が組んだ模試。IMPORT=原稿から取り込んだ出典セット（一覧・使用回数の集計から除外）。 */
+export const mockExamOriginEnum = pgEnum("mock_exam_origin", ["USER", "IMPORT"]);
 
 export type PaperSettings = {
   paperSize: "A4" | "B5";
@@ -221,12 +223,14 @@ export const mockExams = pgTable("mock_exams", {
   durationMinutes: integer("duration_minutes").notNull(),
   questionCount: integer("question_count").notNull(),
   status: mockExamStatusEnum("status").default("DRAFT").notNull(),
+  origin: mockExamOriginEnum("origin").default("USER").notNull(),
   templateId: uuid("template_id").references(() => mockTemplates.id, { onDelete: "set null" }),
   paperSettings: jsonb("paper_settings").$type<PaperSettings>().default(defaultPaperSettings).notNull(),
   ...timestamps,
 }, (table) => [
   index("mock_exams_subject_idx").on(table.subjectId),
   index("mock_exams_status_idx").on(table.status),
+  index("mock_exams_origin_idx").on(table.origin),
 ]);
 
 export const mockExamItems = pgTable("mock_exam_items", {

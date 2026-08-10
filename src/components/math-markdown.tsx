@@ -190,9 +190,6 @@ export function MathMarkdown({ source, className = "" }: { source: string; class
             "\\keisan": "\\underbrace{\\hspace{8em}}_{\\text{計算欄}}",
             "\\gcdd": "\\operatorname{gcd}",
             "\\pl": "+",
-            "\\leqq": "\\leqslant",
-            "\\geqq": "\\geqslant",
-            "\\fallingdotseq": "\\approx",
           },
         }], rehypeSafeKatexErrors]}
         components={{

@@ -125,18 +125,22 @@ export async function createMockExamAction(formData: FormData) {
   redirect(`/admin/mocks/${examId}`);
 }
 
-export async function createMathMockExamAction() {
+export async function createMathMockExamAction(formData: FormData) {
   await requireAdmin();
   const mathSubject = await getMathSubject();
   if (!mathSubject) throw new Error("数学科目が登録されていません。先にDBセットアップを確認してください。");
+  const targetUniversity = text(formData, "targetUniversity") || null;
+  const title = text(formData, "title").trim() || (targetUniversity ? `${targetUniversity} 予想模試` : "数学予想模試");
+  const questionCount = Math.min(Math.max(Number(text(formData, "questionCount")) || 4, 1), 20);
+  const durationMinutes = Math.min(Math.max(Number(text(formData, "durationMinutes")) || 150, 1), 600);
   const db = getDb();
   const examId = randomUUID();
-  const questionCount = 4;
   await db.batch([
     db.insert(mockExams).values({
       id: examId,
-      title: "数学予想模試（編集中）",
-      durationMinutes: 150,
+      title,
+      targetUniversity,
+      durationMinutes,
       questionCount,
       subjectId: mathSubject.id,
       paperSettings: defaultPaperSettings,
@@ -145,7 +149,8 @@ export async function createMathMockExamAction() {
   ]);
   revalidatePath("/admin");
   revalidatePath("/admin/mocks");
-  redirect(`/admin/mocks/${examId}`);
+  // 大学を決めて作った場合は、その大学の問題に絞った状態で候補を開く。
+  redirect(`/admin/mocks/${examId}${targetUniversity ? `?candidateUniversity=${encodeURIComponent(targetUniversity)}` : ""}`);
 }
 
 export async function updateMockSettingsAction(id: string, formData: FormData) {
@@ -271,17 +276,21 @@ export async function addMockSlotAction(examId: string) {
   revalidatePath("/admin/mocks");
 }
 
-export async function removeLastEmptyMockSlotAction(examId: string) {
+// 大問はどこでも削除できる。残りは詰めて番号を振り直す。
+export async function deleteMockSlotAction(examId: string, itemId: string) {
   await requireAdmin();
   const db = getDb();
   const items = await db.select().from(mockExamItems).where(eq(mockExamItems.mockExamId, examId));
   if (items.length <= 1) throw new Error("大問は最低1問必要です。");
-  const last = [...items].sort((a, b) => b.position - a.position)[0];
-  if (last.problemId) throw new Error("末尾の問題を外してから大問を削除してください。");
-  await db.batch([
-    db.delete(mockExamItems).where(eq(mockExamItems.id, last.id)),
-    db.update(mockExams).set({ questionCount: items.length - 1, updatedAt: new Date() }).where(eq(mockExams.id, examId)),
-  ]);
+  if (!items.some((item) => item.id === itemId)) throw new Error("大問が見つかりません。");
+  await db.delete(mockExamItems).where(and(eq(mockExamItems.id, itemId), eq(mockExamItems.mockExamId, examId)));
+  const rest = items.filter((item) => item.id !== itemId).sort((a, b) => a.position - b.position);
+  // 位置は (模試, 位置) が一意。前から順に詰めるので番号は必ず減り、衝突しない。
+  for (const [index, item] of rest.entries()) {
+    if (item.position === index + 1) continue;
+    await db.update(mockExamItems).set({ position: index + 1, updatedAt: new Date() }).where(eq(mockExamItems.id, item.id));
+  }
+  await db.update(mockExams).set({ questionCount: rest.length, updatedAt: new Date() }).where(eq(mockExams.id, examId));
   revalidatePath(`/admin/mocks/${examId}`);
   revalidatePath("/admin/mocks");
 }

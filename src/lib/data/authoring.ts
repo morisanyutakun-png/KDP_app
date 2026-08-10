@@ -40,6 +40,11 @@ export type UniversityDifficultyProfile = {
   difficultyCounts: Array<{ difficulty: number; count: number }>;
 };
 
+// 「使用済み」は利用者が組んだ模試だけを数える。取り込んだ出典セットは在庫扱いにする。
+const userMockFilter = sql`${mockExams}.origin = 'USER' and ${mockExams}.status <> 'ARCHIVED'`;
+const userUsageQuery = sql`(select 1 from ${mockExamItems} inner join ${mockExams} on ${mockExams.id} = ${mockExamItems.mockExamId} where ${mockExamItems.problemId} = ${problems.id} and ${userMockFilter})`;
+const userUsageCount = sql<number>`(select count(*)::int from ${mockExamItems} inner join ${mockExams} on ${mockExams.id} = ${mockExamItems.mockExamId} where ${mockExamItems.problemId} = ${problems.id} and ${userMockFilter})`;
+
 function problemConditions(filters: ProblemSearch) {
   const conditions = [eq(problems.isArchived, false)];
   if (filters.q) {
@@ -56,8 +61,8 @@ function problemConditions(filters: ProblemSearch) {
   if (filters.timeMax) conditions.push(lte(problems.estimatedMinutes, filters.timeMax));
   if (filters.verification) conditions.push(eq(problems.verificationStatus, filters.verification));
   if (filters.excludeIds?.length) conditions.push(notInArray(problems.id, filters.excludeIds));
-  if (filters.usage === "used") conditions.push(sql`exists (select 1 from ${mockExamItems} usage_item where usage_item.problem_id = ${problems.id})`);
-  if (filters.usage === "unused") conditions.push(sql`not exists (select 1 from ${mockExamItems} usage_item where usage_item.problem_id = ${problems.id})`);
+  if (filters.usage === "used") conditions.push(sql`exists ${userUsageQuery}`);
+  if (filters.usage === "unused") conditions.push(sql`not exists ${userUsageQuery}`);
   return conditions;
 }
 
@@ -143,7 +148,7 @@ export async function searchProblems(filters: ProblemSearch = {}) {
   const limit = Math.min(Math.max(filters.limit || 30, 1), 100);
   const page = Math.max(filters.page || 1, 1);
   const where = and(...problemConditions(filters));
-  const usageCount = sql<number>`(select count(*)::int from ${mockExamItems} usage_item where usage_item.problem_id = ${problems.id})`;
+  const usageCount = userUsageCount;
   const orderBy = filters.sort === "difficulty-asc"
     ? [asc(problems.difficulty), asc(problems.code)]
     : filters.sort === "difficulty-desc"
@@ -185,9 +190,9 @@ export async function getAuthoringOverview() {
   const [[problemTotal], [verifiedTotal], [mockTotal], [unusedTotal], recentMocks] = await Promise.all([
     db.select({ value: count() }).from(problems).where(and(eq(problems.isArchived, false), eq(problems.subjectId, mathSubject.id))),
     db.select({ value: count() }).from(problems).where(and(eq(problems.isArchived, false), eq(problems.subjectId, mathSubject.id), eq(problems.verificationStatus, "VERIFIED"))),
-    db.select({ value: count() }).from(mockExams).where(and(ne(mockExams.status, "ARCHIVED"), eq(mockExams.subjectId, mathSubject.id))),
-    db.select({ value: count() }).from(problems).where(and(eq(problems.isArchived, false), eq(problems.subjectId, mathSubject.id), sql`not exists (select 1 from ${mockExamItems} usage_item where usage_item.problem_id = ${problems.id})`)),
-    db.select({ exam: mockExams, subjectName: subjects.name }).from(mockExams).leftJoin(subjects, eq(mockExams.subjectId, subjects.id)).where(and(ne(mockExams.status, "ARCHIVED"), eq(mockExams.subjectId, mathSubject.id))).orderBy(desc(mockExams.updatedAt)).limit(6),
+    db.select({ value: count() }).from(mockExams).where(and(ne(mockExams.status, "ARCHIVED"), eq(mockExams.origin, "USER"), eq(mockExams.subjectId, mathSubject.id))),
+    db.select({ value: count() }).from(problems).where(and(eq(problems.isArchived, false), eq(problems.subjectId, mathSubject.id), sql`not exists ${userUsageQuery}`)),
+    db.select({ exam: mockExams, subjectName: subjects.name }).from(mockExams).leftJoin(subjects, eq(mockExams.subjectId, subjects.id)).where(and(ne(mockExams.status, "ARCHIVED"), eq(mockExams.origin, "USER"), eq(mockExams.subjectId, mathSubject.id))).orderBy(desc(mockExams.updatedAt)).limit(6),
   ]);
   return { problemTotal: problemTotal.value, verifiedTotal: verifiedTotal.value, mockTotal: mockTotal.value, unusedTotal: unusedTotal.value, recentMocks };
 }
@@ -196,7 +201,7 @@ export async function listMockExams(filters: MockExamSearch = {}) {
   const db = getDb();
   const limit = Math.min(Math.max(filters.limit || 24, 1), 100);
   const page = Math.max(filters.page || 1, 1);
-  const conditions = [ne(mockExams.status, "ARCHIVED")];
+  const conditions = [ne(mockExams.status, "ARCHIVED"), eq(mockExams.origin, "USER")];
   if (filters.q) {
     const term = `%${filters.q}%`;
     conditions.push(or(ilike(mockExams.title, term), ilike(mockExams.targetUniversity, term), ilike(subjects.name, term))!);
@@ -221,7 +226,7 @@ export async function listMockExams(filters: MockExamSearch = {}) {
 }
 
 export async function getMockExamFacets(subjectId?: string) {
-  const conditions = [ne(mockExams.status, "ARCHIVED"), isNotNull(mockExams.targetUniversity)];
+  const conditions = [ne(mockExams.status, "ARCHIVED"), eq(mockExams.origin, "USER"), isNotNull(mockExams.targetUniversity)];
   if (subjectId) conditions.push(eq(mockExams.subjectId, subjectId));
   const rows = await getDb().selectDistinct({ value: mockExams.targetUniversity }).from(mockExams)
     .where(and(...conditions))
@@ -277,8 +282,11 @@ export async function getMockTemplate(id: string) {
 }
 
 export async function getUsedProblemIds(excludeExamId?: string) {
-  const where = excludeExamId ? and(isNotNull(mockExamItems.problemId), ne(mockExamItems.mockExamId, excludeExamId)) : isNotNull(mockExamItems.problemId);
-  const rows = await getDb().select({ problemId: mockExamItems.problemId }).from(mockExamItems).where(where);
+  const conditions = [isNotNull(mockExamItems.problemId), eq(mockExams.origin, "USER"), ne(mockExams.status, "ARCHIVED")];
+  if (excludeExamId) conditions.push(ne(mockExamItems.mockExamId, excludeExamId));
+  const rows = await getDb().select({ problemId: mockExamItems.problemId }).from(mockExamItems)
+    .innerJoin(mockExams, eq(mockExams.id, mockExamItems.mockExamId))
+    .where(and(...conditions));
   return new Set(rows.map((row) => row.problemId).filter(Boolean));
 }
 

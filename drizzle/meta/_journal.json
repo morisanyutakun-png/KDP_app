@@ -36,6 +36,13 @@
       "when": 1786324549052,
       "tag": "0004_goofy_proudstar",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786359875510,
+      "tag": "0005_first_rictor",
+      "breakpoints": true
     }
   ]
 }

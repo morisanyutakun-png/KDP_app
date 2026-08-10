@@ -131,9 +131,10 @@ export async function POST(request: Request) {
         targetUniversity: payload.mock.targetUniversity,
         durationMinutes: payload.mock.durationMinutes,
         questionCount: payload.mock.questionCount,
+        origin: "IMPORT",
         updatedAt: now,
       }).where(eq(mockExams.id, existingMock.id)).returning({ id: mockExams.id })
-      : await db.insert(mockExams).values({ ...payload.mock, subjectId: subject.id }).returning({ id: mockExams.id });
+      : await db.insert(mockExams).values({ ...payload.mock, subjectId: subject.id, origin: "IMPORT" }).returning({ id: mockExams.id });
     if (!mock) throw new Error("模試を作成できませんでした。");
 
     const problemByCode = new Map(importedProblems.map((problem) => [problem.code, problem]));

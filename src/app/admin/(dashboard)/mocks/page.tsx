@@ -32,7 +32,7 @@ export default async function MockExamsPage({ searchParams }: { searchParams: Pr
   };
 
   return <>
-    <AdminPageHeader eyebrow="数学専用" title="数学予想模試" description={`${total}件。数学の問題構成に集中して管理します。`} action={<Link className="btn-primary" href="/admin/mocks/new">新しい数学模試</Link>} />
+    <AdminPageHeader eyebrow="数学専用" title="数学予想模試" description={`自分で組んだ模試${total}件。原稿から取り込んだ出典セットは問題データベース側で管理します。`} action={<Link className="btn-primary" href="/admin/mocks/new">新しい数学模試</Link>} />
     <div className="workbench space-y-5">
       <form className="card grid gap-3 p-4 sm:grid-cols-[minmax(220px,1fr)_180px_auto]" method="get">
         <label><span className="label">想定大学</span><select className="input" name="targetUniversity" defaultValue={filters.targetUniversity || ""}><option value="">すべての大学</option>{facets.universities.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>

@@ -7,9 +7,9 @@ import {
   assignProblemFromFormAction,
   autoAssignEmptySlotsAction,
   clearSlotAction,
+  deleteMockSlotAction,
   duplicateMockExamAction,
   moveSlotProblemAction,
-  removeLastEmptyMockSlotAction,
   updateMockSettingsAction,
 } from "@/app/admin/author-actions";
 import { CandidateFilterBar } from "@/components/candidate-filter-bar";
@@ -65,7 +65,6 @@ export default async function MockBuilderPage({ params, searchParams }: { params
     ? assigned.reduce((sum, { problem }) => sum + (problem?.difficulty || 0), 0) / assigned.length
     : 0;
   const complete = emptyCount === 0;
-  const lastSlotIsEmpty = !data.items.at(-1)?.problem;
   const paper = data.exam.paperSettings;
   const activeSlot = data.items.find(({ item }) => item.id === selectedItem);
   const selectedUniversityProfile = universityProfiles.find((profile) => profile.university === read("candidateUniversity"));
@@ -128,10 +127,7 @@ export default async function MockBuilderPage({ params, searchParams }: { params
   const railNode = <>
     <div className="flex shrink-0 items-center justify-between px-2.5 py-2">
       <p className="wb-label">大問構成</p>
-      <div className="flex gap-1">
-        <form action={addMockSlotAction.bind(null, id)}><button aria-label="大問を追加" className="wb-icon" disabled={data.items.length >= 20} title="大問を追加" type="submit">＋</button></form>
-        <form action={removeLastEmptyMockSlotAction.bind(null, id)}><button aria-label="末尾の空欄を削除" className="wb-icon" disabled={!lastSlotIsEmpty || data.items.length <= 1} title="末尾の空欄を削除" type="submit">−</button></form>
-      </div>
+      <form action={addMockSlotAction.bind(null, id)}><button aria-label="大問を追加" className="wb-icon" disabled={data.items.length >= 20} title="大問を追加" type="submit">＋</button></form>
     </div>
     <ol className="wb-scroll flex-1 px-1.5 pb-2">
       {data.items.map(({ item, problem }, index) => {
@@ -148,6 +144,7 @@ export default async function MockBuilderPage({ params, searchParams }: { params
           <div className={`absolute top-1/2 right-1 hidden -translate-y-1/2 gap-0.5 rounded-md p-0.5 group-focus-within:flex group-hover:flex ${active ? "bg-blue-50" : "bg-white"}`}>
             <form action={moveSlotProblemAction.bind(null, id, item.id, "up")}><button aria-label={`第${item.position}問を上へ`} className="wb-icon" disabled={index === 0} title="上へ" type="submit">↑</button></form>
             <form action={moveSlotProblemAction.bind(null, id, item.id, "down")}><button aria-label={`第${item.position}問を下へ`} className="wb-icon" disabled={index === data.items.length - 1} title="下へ" type="submit">↓</button></form>
+            <form action={deleteMockSlotAction.bind(null, id, item.id)}><button aria-label={`第${item.position}問を削除`} className="wb-icon" disabled={data.items.length <= 1} title="この大問を削除" type="submit">✕</button></form>
           </div>
         </li>;
       })}
