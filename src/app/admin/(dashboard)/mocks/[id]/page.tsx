@@ -14,6 +14,7 @@ import {
   updateSlotFiltersAction,
 } from "@/app/admin/author-actions";
 import { AdminPageHeader } from "@/components/admin-ui";
+import { CandidateFilterPanel } from "@/components/candidate-filter-panel";
 import { MathMarkdown } from "@/components/math-markdown";
 import { getTimeBandRange, mockStatusLabels, timeBandOptions, verificationLabels } from "@/lib/authoring-labels";
 import {
@@ -21,8 +22,10 @@ import {
   getMockCandidates,
   getMockExam,
   getProblemFacets,
+  getUniversityDifficultyProfiles,
   getUsedProblemIds,
   type ProblemSearch,
+  type UniversityDifficultyProfile,
 } from "@/lib/data/authoring";
 
 export const dynamic = "force-dynamic";
@@ -30,19 +33,39 @@ export const dynamic = "force-dynamic";
 type Query = Record<string, string | string[] | undefined>;
 const one = (value: string | string[] | undefined) => Array.isArray(value) ? value[0] : value || "";
 
-function candidateSearch(query: Query): ProblemSearch {
+function candidateDifficultyMode(query: Query) {
+  const requested = one(query.candidateDifficultyMode);
+  if (["all", "university-easier", "university-standard", "university-harder"].includes(requested)) return requested;
+  if (/^exact-[1-5]$/.test(requested)) return requested;
+  const legacyDifficulty = Number(one(query.candidateDifficulty));
+  return legacyDifficulty >= 1 && legacyDifficulty <= 5 ? `exact-${legacyDifficulty}` : "all";
+}
+
+function candidateSearch(query: Query, universityProfiles: UniversityDifficultyProfile[]): ProblemSearch {
   const usage = one(query.candidateUsage);
   const verification = one(query.candidateVerification);
   const sort = one(query.candidateSort);
-  const difficulty = Number(one(query.candidateDifficulty)) || undefined;
   const university = one(query.candidateUniversity) || undefined;
+  const difficultyMode = candidateDifficultyMode(query);
+  const profile = universityProfiles.find((item) => item.university === university);
+  const exactDifficulty = difficultyMode.startsWith("exact-") ? Number(difficultyMode.slice(6)) : undefined;
+  let difficultyMin = exactDifficulty;
+  let difficultyMax = exactDifficulty;
+  if (profile && difficultyMode === "university-standard") {
+    difficultyMin = profile.baselineDifficulty;
+    difficultyMax = profile.baselineDifficulty;
+  } else if (profile && difficultyMode === "university-easier") {
+    difficultyMax = profile.baselineDifficulty - 1;
+  } else if (profile && difficultyMode === "university-harder") {
+    difficultyMin = profile.baselineDifficulty + 1;
+  }
   const timeBand = getTimeBandRange(one(query.candidateTimeBand));
   return {
     field: one(query.candidateField) || undefined,
     subfield: one(query.candidateSubfield) || undefined,
     targetUniversity: university,
-    difficultyMin: difficulty,
-    difficultyMax: difficulty,
+    difficultyMin,
+    difficultyMax,
     timeMin: timeBand?.min,
     timeMax: timeBand?.max,
     usage: usage === "used" || usage === "unused" ? usage : undefined,
@@ -71,10 +94,13 @@ export default async function MockBuilderPage({ params, searchParams }: { params
   const selectedItem = requestedSlot && data.items.some(({ item }) => item.id === requestedSlot)
     ? requestedSlot
     : data.items.find(({ problem }) => !problem)?.item.id || data.items[0]?.item.id;
-  const filters = candidateSearch(query);
-  const facets = mathSubject
-    ? await getProblemFacets(mathSubject.id)
-    : { fields: [], subfields: [], universities: [] };
+  const [facets, universityProfiles] = mathSubject
+    ? await Promise.all([
+      getProblemFacets(mathSubject.id, one(query.candidateField) || undefined),
+      getUniversityDifficultyProfiles(mathSubject.id),
+    ])
+    : [{ fields: [], subfields: [], universities: [] }, [] as UniversityDifficultyProfile[]];
+  const filters = candidateSearch(query, universityProfiles);
   const candidateData = selectedItem && mathSubject
     ? await getMockCandidates(id, selectedItem, { ...filters, subjectId: mathSubject.id })
     : null;
@@ -100,6 +126,50 @@ export default async function MockBuilderPage({ params, searchParams }: { params
     return `/admin/mocks/${id}${suffix}${hash}`;
   };
   const candidatePageHref = (page: number) => hrefWith({ candidatePage: String(page) }, "#candidates");
+  const difficultyMode = candidateDifficultyMode(query);
+  const selectedUniversityProfile = universityProfiles.find((profile) => profile.university === one(query.candidateUniversity));
+  const activeCandidateFilters: Array<{ label: string; href: string }> = [];
+  if (one(query.candidateUniversity)) activeCandidateFilters.push({
+    label: one(query.candidateUniversity),
+    href: hrefWith({
+      candidateUniversity: undefined,
+      candidateDifficultyMode: difficultyMode.startsWith("university-") ? "all" : difficultyMode,
+      candidatePage: undefined,
+    }, "#candidates"),
+  });
+  if (one(query.candidateField)) activeCandidateFilters.push({
+    label: one(query.candidateField),
+    href: hrefWith({ candidateField: undefined, candidateSubfield: undefined, candidatePage: undefined }, "#candidates"),
+  });
+  if (one(query.candidateSubfield)) activeCandidateFilters.push({
+    label: one(query.candidateSubfield),
+    href: hrefWith({ candidateSubfield: undefined, candidatePage: undefined }, "#candidates"),
+  });
+  if (difficultyMode !== "all") {
+    const difficultyLabels: Record<string, string> = {
+      "university-easier": "大学基準：易しめ",
+      "university-standard": "大学基準：標準",
+      "university-harder": "大学基準：難しめ",
+    };
+    activeCandidateFilters.push({
+      label: difficultyLabels[difficultyMode] || `難易度 ${difficultyMode.replace("exact-", "")}`,
+      href: hrefWith({ candidateDifficultyMode: "all", candidateDifficulty: undefined, candidatePage: undefined }, "#candidates"),
+    });
+  }
+  const selectedTimeBand = timeBandOptions.find((option) => option.value === one(query.candidateTimeBand));
+  if (selectedTimeBand) activeCandidateFilters.push({
+    label: selectedTimeBand.label,
+    href: hrefWith({ candidateTimeBand: undefined, candidatePage: undefined }, "#candidates"),
+  });
+  if (one(query.candidateUsage)) activeCandidateFilters.push({
+    label: one(query.candidateUsage) === "unused" ? "未使用のみ" : "使用済みのみ",
+    href: hrefWith({ candidateUsage: undefined, candidatePage: undefined }, "#candidates"),
+  });
+  const selectedVerification = one(query.candidateVerification) as keyof typeof verificationLabels;
+  if (verificationLabels[selectedVerification]) activeCandidateFilters.push({
+    label: verificationLabels[selectedVerification],
+    href: hrefWith({ candidateVerification: undefined, candidatePage: undefined }, "#candidates"),
+  });
 
   return <>
     <AdminPageHeader
@@ -159,28 +229,39 @@ export default async function MockBuilderPage({ params, searchParams }: { params
           {candidateData && <section className="card overflow-hidden">
             <header className="border-b border-line bg-surface px-5 py-4"><p className="text-xs text-muted">第{candidateData.slot.position}問</p><div className="mt-1 flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-bold text-navy">候補問題から選ぶ</h2><span className="text-xs font-bold text-muted">{candidateData.candidates.total}件</span></div><p className="mt-2 text-xs text-muted">問題文を読み比べて、採用する問題を選択してください。</p></header>
 
-            <form className="grid gap-3 border-b border-line p-4 sm:grid-cols-2 lg:grid-cols-4" method="get">
-              <input name="slot" type="hidden" value={candidateData.slot.id} />
-              <label><span className="label text-xs">分野</span><select className="input" name="candidateField" defaultValue={candidateData.filters.field || ""}><option value="">すべて</option>{facets.fields.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-              <label><span className="label text-xs">サブ分野</span><select className="input" name="candidateSubfield" defaultValue={candidateData.filters.subfield || ""}><option value="">すべて</option>{facets.subfields.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-              <label><span className="label text-xs">想定大学</span><select className="input" name="candidateUniversity" defaultValue={candidateData.filters.targetUniversity || ""}><option value="">すべて</option>{facets.universities.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-              <label><span className="label text-xs">難易度</span><select className="input" name="candidateDifficulty" defaultValue={candidateData.filters.difficultyMin === candidateData.filters.difficultyMax ? candidateData.filters.difficultyMin || "" : ""}><option value="">すべて</option>{[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>難易度 {value}</option>)}</select></label>
-              <label><span className="label text-xs">想定時間</span><select className="input" name="candidateTimeBand" defaultValue={one(query.candidateTimeBand)}><option value="">すべて</option>{timeBandOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-              <label><span className="label text-xs">使用履歴</span><select className="input" name="candidateUsage" defaultValue={candidateData.filters.usage || ""}><option value="">すべて</option><option value="unused">未使用のみ</option><option value="used">使用済みのみ</option></select></label>
-              <label><span className="label text-xs">検証状態</span><select className="input" name="candidateVerification" defaultValue={candidateData.filters.verification || ""}><option value="">すべて</option>{Object.entries(verificationLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-              <label><span className="label text-xs">並び順</span><select className="input" name="candidateSort" defaultValue={candidateData.filters.sort || "least-used"}><option value="least-used">使用回数が少ない順</option><option value="time-asc">短時間順</option><option value="difficulty-asc">易しい順</option><option value="difficulty-desc">難しい順</option><option value="recent">更新が新しい順</option></select></label>
-              <div className="flex gap-2 sm:col-span-2 lg:col-span-4"><button className="btn-primary" type="submit">この条件で絞り込む</button><Link className="btn-secondary" href={`/admin/mocks/${id}?slot=${candidateData.slot.id}#candidates`}>条件を解除</Link></div>
-            </form>
+            <CandidateFilterPanel
+              action={`/admin/mocks/${id}#candidates`}
+              activeFilters={activeCandidateFilters}
+              fields={facets.fields}
+              resetHref={`/admin/mocks/${id}?slot=${candidateData.slot.id}#candidates`}
+              resultCount={candidateData.candidates.total}
+              selected={{
+                university: one(query.candidateUniversity),
+                field: one(query.candidateField),
+                subfield: one(query.candidateSubfield),
+                difficultyMode,
+                timeBand: one(query.candidateTimeBand),
+                usage: one(query.candidateUsage),
+                verification: one(query.candidateVerification),
+                sort: candidateData.filters.sort || "least-used",
+              }}
+              slotId={candidateData.slot.id}
+              subfields={facets.subfields}
+              timeOptions={timeBandOptions.map(({ value, label }) => ({ value, label }))}
+              universities={facets.universities}
+              universityProfiles={universityProfiles}
+              verificationOptions={Object.entries(verificationLabels).map(([value, label]) => ({ value, label }))}
+            />
 
             <div className="divide-y divide-line">
               {candidateData.candidates.rows.map(({ problem, usageCount }) => <article key={problem.id}>
                 <header className="flex flex-col gap-3 border-b border-line bg-white px-5 py-4 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0"><h3 className="font-bold text-navy">{problem.title || problem.code}</h3><p className="mt-1 text-xs text-muted">{problem.code} · {problem.field}{problem.subfield ? ` / ${problem.subfield}` : ""} · 難易度{problem.difficulty} · {problem.estimatedMinutes}分 · 使用{Number(usageCount)}回</p>{problem.targetUniversity && <p className="mt-1 text-xs text-muted">想定：{problem.targetUniversity}</p>}</div>
+                  <div className="min-w-0"><h3 className="font-bold text-navy">{problem.title || problem.code}</h3><p className="mt-1 text-xs text-muted">{problem.code} · {problem.field}{problem.subfield ? ` / ${problem.subfield}` : ""} · 難易度{problem.difficulty} · {problem.estimatedMinutes}分 · 使用{Number(usageCount)}回</p>{problem.targetUniversity && <div className="mt-2 flex flex-wrap items-center gap-2 text-xs"><span className="border border-line bg-surface px-2 py-1 text-muted">想定：{problem.targetUniversity}</span>{selectedUniversityProfile && problem.targetUniversity === selectedUniversityProfile.university && <span className="border border-navy px-2 py-1 font-bold text-navy">{problem.difficulty < selectedUniversityProfile.baselineDifficulty ? "大学基準より易しめ" : problem.difficulty > selectedUniversityProfile.baselineDifficulty ? "大学基準より難しめ" : "大学標準"}</span>}</div>}</div>
                   <form className="shrink-0" action={assignProblemAction.bind(null, id, candidateData.slot.id, problem.id)}><button className="btn-primary w-full sm:w-auto" type="submit">第{candidateData.slot.position}問に採用</button></form>
                 </header>
                 <div className="p-5 sm:p-7">{problem.imageUrl && <Image unoptimized src={problem.imageUrl} alt="問題図" width={900} height={600} className="mx-auto mb-5 max-h-72 w-auto object-contain" />}<MathMarkdown source={problem.statement} /><details className="mt-5 border-t border-line pt-3"><summary className="cursor-pointer text-xs font-bold text-muted">解答・解説を確認</summary><div className="mt-4 grid gap-5 lg:grid-cols-2"><section><h4 className="mb-2 text-sm font-bold text-navy">解答</h4><MathMarkdown source={problem.answer || "未入力"} /></section><section><h4 className="mb-2 text-sm font-bold text-navy">解説</h4><MathMarkdown source={problem.explanation || "未入力"} /></section></div></details></div>
               </article>)}
-              {!candidateData.candidates.rows.length && <div className="p-10 text-center"><h3 className="font-bold text-navy">条件に合う数学問題がありません</h3><p className="mt-2 text-sm text-muted">いずれかのプルダウンを「すべて」に戻してください。</p></div>}
+              {!candidateData.candidates.rows.length && <div className="p-10 text-center"><h3 className="font-bold text-navy">条件に合う数学問題がありません</h3><p className="mt-2 text-sm text-muted">上に表示されている条件を1つ外すと、候補を広げられます。</p></div>}
             </div>
             {candidateData.candidates.total > candidateData.candidates.limit && <nav className="flex items-center justify-center gap-3 border-t border-line p-4"><Link className={`btn-secondary ${candidateData.candidates.page <= 1 ? "pointer-events-none opacity-40" : ""}`} href={candidatePageHref(candidateData.candidates.page - 1)}>← 前へ</Link><span className="text-sm font-bold text-muted">{candidateData.candidates.page} / {Math.ceil(candidateData.candidates.total / candidateData.candidates.limit)}</span><Link className={`btn-secondary ${candidateData.candidates.page * candidateData.candidates.limit >= candidateData.candidates.total ? "pointer-events-none opacity-40" : ""}`} href={candidatePageHref(candidateData.candidates.page + 1)}>次へ →</Link></nav>}
           </section>}

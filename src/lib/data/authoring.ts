@@ -32,6 +32,14 @@ export type MockExamSearch = {
   limit?: number;
 };
 
+export type UniversityDifficultyProfile = {
+  university: string;
+  problemCount: number;
+  averageDifficulty: number;
+  baselineDifficulty: number;
+  difficultyCounts: Array<{ difficulty: number; count: number }>;
+};
+
 function problemConditions(filters: ProblemSearch) {
   const conditions = [eq(problems.isArchived, false)];
   if (filters.q) {
@@ -41,8 +49,8 @@ function problemConditions(filters: ProblemSearch) {
   if (filters.subjectId) conditions.push(eq(problems.subjectId, filters.subjectId));
   if (filters.field) conditions.push(eq(problems.field, filters.field));
   if (filters.subfield) conditions.push(eq(problems.subfield, filters.subfield));
-  if (filters.difficultyMin) conditions.push(gte(problems.difficulty, filters.difficultyMin));
-  if (filters.difficultyMax) conditions.push(lte(problems.difficulty, filters.difficultyMax));
+  if (filters.difficultyMin !== undefined) conditions.push(gte(problems.difficulty, filters.difficultyMin));
+  if (filters.difficultyMax !== undefined) conditions.push(lte(problems.difficulty, filters.difficultyMax));
   if (filters.targetUniversity) conditions.push(eq(problems.targetUniversity, filters.targetUniversity));
   if (filters.timeMin) conditions.push(gte(problems.estimatedMinutes, filters.timeMin));
   if (filters.timeMax) conditions.push(lte(problems.estimatedMinutes, filters.timeMax));
@@ -88,6 +96,46 @@ export async function getProblemFacets(subjectId?: string, field?: string) {
     subfields: subfieldRows.map((row) => row.value).filter((value): value is string => Boolean(value)),
     universities: universityRows.map((row) => row.value).filter((value): value is string => Boolean(value)),
   };
+}
+
+export async function getUniversityDifficultyProfiles(subjectId: string): Promise<UniversityDifficultyProfile[]> {
+  const rows = await getDb()
+    .select({
+      university: problems.targetUniversity,
+      difficulty: problems.difficulty,
+      value: count(),
+    })
+    .from(problems)
+    .where(and(
+      eq(problems.isArchived, false),
+      eq(problems.subjectId, subjectId),
+      isNotNull(problems.targetUniversity),
+    ))
+    .groupBy(problems.targetUniversity, problems.difficulty)
+    .orderBy(asc(problems.targetUniversity), asc(problems.difficulty));
+
+  const grouped = new Map<string, Array<{ difficulty: number; count: number }>>();
+  for (const row of rows) {
+    const university = row.university?.trim();
+    if (!university) continue;
+    const difficultyCounts = grouped.get(university) || [];
+    difficultyCounts.push({ difficulty: row.difficulty, count: Number(row.value) });
+    grouped.set(university, difficultyCounts);
+  }
+
+  return Array.from(grouped, ([university, difficultyCounts]) => {
+    const problemCount = difficultyCounts.reduce((sum, item) => sum + item.count, 0);
+    const averageDifficulty = problemCount
+      ? difficultyCounts.reduce((sum, item) => sum + item.difficulty * item.count, 0) / problemCount
+      : 0;
+    return {
+      university,
+      problemCount,
+      averageDifficulty,
+      baselineDifficulty: Math.min(5, Math.max(1, Math.round(averageDifficulty))),
+      difficultyCounts,
+    };
+  });
 }
 
 export async function searchProblems(filters: ProblemSearch = {}) {
@@ -211,8 +259,8 @@ export async function getMockCandidates(examId: string, itemId: string, extra: P
     subjectId: extra.subjectId || exam.subjectId || undefined,
     field: extra.field || slot.fieldFilter || undefined,
     subfield: extra.subfield || slot.subfieldFilter || undefined,
-    difficultyMin: extra.difficultyMin || slot.difficultyMin || undefined,
-    difficultyMax: extra.difficultyMax || slot.difficultyMax || undefined,
+    difficultyMin: extra.difficultyMin ?? slot.difficultyMin ?? undefined,
+    difficultyMax: extra.difficultyMax ?? slot.difficultyMax ?? undefined,
     targetUniversity: extra.ignoreExamTarget ? undefined : extra.targetUniversity || exam.targetUniversity || undefined,
     usage: extra.usage || (slot.unusedOnly ? "unused" : undefined),
     sort: extra.sort || "least-used",
