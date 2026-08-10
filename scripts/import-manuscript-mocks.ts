@@ -658,10 +658,11 @@ async function projectPayloads(sourceRoot: string, project: Project): Promise<Im
     const answerFiles = filenames.filter((name) => new RegExp(`^set${setNumber}_a[^.]*\\.tex$`).test(name));
     const answerSource = (await Promise.all(answerFiles.map((name) => readFile(path.join(directory, name), "utf8")))).join("\n\n");
     const solutionBlocks = extractSolutionBlocks(answerSource);
+    const solutionsArePending = solutionBlocks.length === 0 && /準備中/.test(answerSource);
     if (!questionBlocks.length) {
       throw new Error(`${project.code} set${setNumber}: 問題ブロックを認識できません。`);
     }
-    if (solutionBlocks.length !== questionBlocks.length) {
+    if (solutionBlocks.length !== questionBlocks.length && !solutionsArePending) {
       throw new Error(`${project.code} set${setNumber}: 問題${questionBlocks.length}件に対して解答見出し${solutionBlocks.length}件です。`);
     }
 
@@ -669,12 +670,13 @@ async function projectPayloads(sourceRoot: string, project: Project): Promise<Im
     const problems: ImportProblem[] = questionBlocks.map((question, problemIndex) => {
       const solution = solutionBlocks[problemIndex];
       const fallbackTitle = `第${question.label || problemIndex + 1}問`;
-      const title = titleFromHeading(solution.heading, fallbackTitle);
+      const title = solution ? titleFromHeading(solution.heading, fallbackTitle) : fallbackTitle;
       const statement = texToMarkdown(question.raw);
-      const explanation = texToMarkdown(solution.raw);
-      const sourceHash = sha256(`${question.raw}\n---SOLUTION---\n${solution.raw}`);
+      const explanation = solution ? texToMarkdown(solution.raw) : { markdown: "", hasFigure: false };
+      const sourceHash = sha256(`${question.raw}\n---SOLUTION---\n${solution?.raw || "PENDING"}`);
       const sourceLabel = `${project.targetUniversity}${project.volumeLabel ? ` ${project.volumeLabel}` : ""} / 第${round}回 / ${fallbackTitle}`;
       const figureNote = statement.hasFigure || explanation.hasFigure ? "\n図表を含むため、元原稿との照合が必要です。" : "";
+      const pendingNote = solution ? "" : "\n解答原稿は準備中のため、問題本文のみDRAFT登録しています。";
       return {
         code: `IMP-${project.code}-S${String(setNumber).padStart(2, "0")}-Q${String(problemIndex + 1).padStart(2, "0")}`,
         title,
@@ -684,10 +686,10 @@ async function projectPayloads(sourceRoot: string, project: Project): Promise<Im
         targetUniversity: project.targetUniversity,
         estimatedMinutes,
         statement: statement.markdown,
-        answer: answerSummary(solution.raw),
+        answer: solution ? answerSummary(solution.raw) : "",
         explanation: explanation.markdown,
         verificationStatus: "DRAFT",
-        notes: `原稿から読み取り登録。出典: ${sourceLabel}\n原稿照合用ハッシュ: ${sourceHash}\n難易度3・想定時間${estimatedMinutes}分は仮設定です。${figureNote}`,
+        notes: `原稿から読み取り登録。出典: ${sourceLabel}\n原稿照合用ハッシュ: ${sourceHash}\n難易度3・想定時間${estimatedMinutes}分は仮設定です。${figureNote}${pendingNote}`,
       };
     });
 
