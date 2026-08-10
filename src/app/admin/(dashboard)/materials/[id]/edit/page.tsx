@@ -9,5 +9,5 @@ export default async function EditMaterialPage({ params, searchParams }: { param
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const material = await getAdminMaterial(id);
   if (!material) notFound();
-  return <><AdminPageHeader eyebrow="EDIT MATERIAL" title="教材を編集" description={material.title} /><div className="mx-auto max-w-5xl p-5 sm:p-8"><MaterialForm material={material} error={query.error} /></div></>;
+  return <><AdminPageHeader eyebrow="出版教材" title="教材を編集" description={material.title} /><div className="mx-auto max-w-5xl p-5 sm:p-8"><MaterialForm material={material} error={query.error} /></div></>;
 }

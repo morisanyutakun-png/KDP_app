@@ -27,7 +27,7 @@ export function ProblemForm({
       </section>
 
       <section className="card p-5 sm:p-6">
-        <h2 className="text-lg font-black text-navy">本文・解答・解説</h2>
+        <h2 className="text-lg font-bold text-navy">本文・解答・解説</h2>
         <p className="mt-1 text-xs text-muted">Markdownに加えて、インライン数式は <code>$...$</code>、別行立て数式は <code>$$...$$</code> または <code>\[...\]</code> で入力できます。</p>
         <div className="mt-5 space-y-5">
           <label><span className="label">問題本文 *</span><textarea className="input min-h-72 font-mono leading-7" name="statement" required defaultValue={problem?.statement} placeholder={"関数 $f(x)=x^3-3x$ について考える。\n\n$$f'(x)=3x^2-3$$\n\n(1) ..."} /></label>
@@ -37,7 +37,7 @@ export function ProblemForm({
       </section>
 
       <section className="card p-5 sm:p-6">
-        <h2 className="text-lg font-black text-navy">図・管理メモ</h2>
+        <h2 className="text-lg font-bold text-navy">図・管理メモ</h2>
         <div className="mt-5 grid gap-5 lg:grid-cols-2">
           <FileUploadField name="imageUrl" kind="problem-image" label="問題図・画像（10MBまで）" accept="image/jpeg,image/png,image/webp,image/avif,image/svg+xml" initialUrl={problem?.imageUrl} />
           <label><span className="label">管理メモ</span><textarea className="input min-h-28" name="notes" defaultValue={problem?.notes || ""} /></label>

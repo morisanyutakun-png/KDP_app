@@ -1,15 +1,17 @@
 @import "tailwindcss";
 
 :root {
-  --navy: #0b1d4a;
-  --navy-soft: #152b5c;
-  --teal: #0d9488;
-  --blue: #1d4ed8;
-  --orange: #f97316;
-  --ink: #172033;
-  --muted: #63708a;
-  --line: #dce3ee;
-  --surface: #f5f7fb;
+  --navy: #24324a;
+  --navy-soft: #182338;
+  --accent: #3b628c;
+  --accent-soft: #edf2f7;
+  --teal: var(--accent);
+  --blue: var(--accent);
+  --orange: var(--accent);
+  --ink: #202833;
+  --muted: #667085;
+  --line: #d7dce3;
+  --surface: #f4f5f4;
   --white: #ffffff;
 }
 
@@ -19,12 +21,16 @@ body {
   margin: 0;
   background: #fff;
   color: var(--ink);
-  font-family: "Hiragino Sans", "Yu Gothic", "Meiryo", system-ui, sans-serif;
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", system-ui, sans-serif;
+  letter-spacing: 0.005em;
   -webkit-font-smoothing: antialiased;
 }
-a { color: inherit; text-decoration: none; }
 button, input, textarea, select { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
+
+@layer base {
+  a { color: inherit; text-decoration: none; }
+}
 
 @theme inline {
   --color-navy: var(--navy);
@@ -36,22 +42,31 @@ button, a { -webkit-tap-highlight-color: transparent; }
   --color-muted: var(--muted);
   --color-line: var(--line);
   --color-surface: var(--surface);
+  --color-blue-50: var(--accent-soft);
+  --color-blue-100: #dce6f0;
+  --color-blue-200: #c5d3e1;
+  --color-teal-50: var(--accent-soft);
+  --color-teal-200: #c5d3e1;
+  --color-orange-50: var(--accent-soft);
+  --color-orange-200: #c5d3e1;
+  --color-orange-300: #aabed1;
+  --color-orange-600: var(--navy-soft);
 }
 
 @layer components {
   .container-page { @apply mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8; }
-  .btn-primary { @apply inline-flex min-h-11 items-center justify-center rounded-xl bg-navy px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-navy-soft focus:outline-none focus:ring-2 focus:ring-brand-blue focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60; }
-  .btn-secondary { @apply inline-flex min-h-11 items-center justify-center rounded-xl border border-line bg-white px-5 py-2.5 text-sm font-bold text-navy transition hover:border-navy hover:bg-surface focus:outline-none focus:ring-2 focus:ring-brand-blue focus:ring-offset-2; }
-  .btn-amazon { @apply inline-flex min-h-12 items-center justify-center rounded-xl bg-brand-orange px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-brand-orange focus:ring-offset-2; }
-  .card { @apply rounded-2xl border border-line bg-white shadow-[0_8px_30px_rgba(11,29,74,0.05)]; }
-  .input { @apply min-h-11 w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-brand-blue focus:ring-2 focus:ring-blue-100; }
-  .label { @apply mb-1.5 block text-sm font-bold text-navy; }
-  .eyebrow { @apply text-xs font-bold uppercase tracking-[0.16em] text-teal; }
-  .workbench { @apply mx-auto w-full max-w-[1600px] p-4 sm:p-6 lg:p-8; }
+  .btn-primary { @apply inline-flex min-h-10 items-center justify-center rounded-md bg-navy px-4 py-2 text-sm font-semibold text-white transition hover:bg-navy-soft focus:outline-none focus:ring-2 focus:ring-brand-blue focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60; }
+  .btn-secondary { @apply inline-flex min-h-10 items-center justify-center rounded-md border border-line bg-white px-4 py-2 text-sm font-semibold text-navy transition hover:border-slate-400 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-brand-blue focus:ring-offset-2; }
+  .btn-amazon { @apply inline-flex min-h-11 items-center justify-center rounded-md bg-navy px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-navy-soft focus:outline-none focus:ring-2 focus:ring-brand-blue focus:ring-offset-2; }
+  .card { @apply rounded-lg border border-line bg-white; }
+  .input { @apply min-h-10 w-full rounded-md border border-line bg-white px-3 py-2 text-sm text-ink outline-none transition placeholder:text-slate-400 focus:border-brand-blue focus:ring-2 focus:ring-blue-100; }
+  .label { @apply mb-1.5 block text-sm font-semibold text-ink; }
+  .eyebrow { @apply text-xs font-medium tracking-normal text-muted; }
+  .workbench { @apply mx-auto w-full max-w-[1440px] p-4 sm:p-6 lg:p-7; }
   .math-content { @apply text-[15px] leading-8 text-ink; }
   .math-content p { @apply my-3 whitespace-pre-wrap; }
-  .math-content h1 { @apply mt-6 mb-3 text-2xl font-black text-navy; }
-  .math-content h2 { @apply mt-5 mb-2 text-xl font-black text-navy; }
+  .math-content h1 { @apply mt-6 mb-3 text-2xl font-bold text-navy; }
+  .math-content h2 { @apply mt-5 mb-2 text-xl font-bold text-navy; }
   .math-content h3 { @apply mt-4 mb-2 text-lg font-bold text-navy; }
   .math-content ul { @apply my-3 list-disc pl-6; }
   .math-content ol { @apply my-3 list-decimal pl-6; }
@@ -60,6 +75,14 @@ button, a { -webkit-tap-highlight-color: transparent; }
   .math-content code:not(pre code) { @apply rounded bg-slate-100 px-1.5 py-0.5 text-sm; }
   .math-content img { @apply my-4 max-w-full rounded-lg; }
 }
+
+.admin-shell .card { border-radius: 6px; box-shadow: none; }
+.admin-shell .rounded-xl,
+.admin-shell .rounded-2xl,
+.admin-shell .rounded-full { border-radius: 4px; }
+.admin-shell table thead { background: #f0f1f2; color: #596273; }
+.admin-shell table th { font-weight: 600; letter-spacing: 0.02em; }
+.admin-shell table tbody tr { transition: background-color 120ms ease; }
 
 @media print {
   @page { margin: 0; }

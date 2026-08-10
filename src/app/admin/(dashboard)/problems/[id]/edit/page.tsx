@@ -11,5 +11,5 @@ export default async function EditProblemPage({ params }: { params: Promise<{ id
   const { id } = await params;
   const [data, subjects] = await Promise.all([getProblem(id), getSubjects()]);
   if (!data) notFound();
-  return <><AdminPageHeader eyebrow="PROBLEM BANK" title={`${data.problem.code} を編集`} description="保存後、数式を含む表示を詳細画面で確認できます。" action={<Link className="btn-secondary" href={`/admin/problems/${id}`}>変更を破棄</Link>} /><div className="workbench"><ProblemForm action={updateProblemAction.bind(null, id)} subjects={subjects} problem={data.problem} /></div></>;
+  return <><AdminPageHeader eyebrow="問題管理" title={`${data.problem.code} を編集`} description="保存後、数式を含む表示を詳細画面で確認できます。" action={<Link className="btn-secondary" href={`/admin/problems/${id}`}>変更を破棄</Link>} /><div className="workbench"><ProblemForm action={updateProblemAction.bind(null, id)} subjects={subjects} problem={data.problem} /></div></>;
 }

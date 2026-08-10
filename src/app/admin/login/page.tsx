@@ -9,12 +9,12 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
   if (await getAdminSession()) redirect("/admin");
   const query = await searchParams;
   return (
-    <main className="grid min-h-screen place-items-center bg-[radial-gradient(circle_at_top_right,#dbeafe,transparent_35%),linear-gradient(135deg,#f5f7fb,#fff)] p-5">
-      <div className="w-full max-w-md">
-        <div className="mb-6 flex items-center justify-center gap-3 text-navy"><span className="grid size-11 place-items-center rounded-2xl bg-navy text-xl font-black text-white">M</span><div><p className="text-xl font-black">Mock Studio</p><p className="text-xs text-muted">AUTHORING WORKBENCH</p></div></div>
-        <div className="card p-6 sm:p-8">
-          <p className="eyebrow">ADMIN ONLY</p><h1 className="mt-2 text-2xl font-black text-navy">教材制作画面にログイン</h1><p className="mt-2 text-sm leading-relaxed text-muted">環境変数に設定した管理者アカウントを使用してください。</p>
-          {query.error && <div role="alert" className="mt-5 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">メールアドレスまたはパスワードが正しくありません。</div>}
+    <main className="grid min-h-screen place-items-center bg-surface p-5">
+      <div className="w-full max-w-sm">
+        <div className="mb-5 border-b border-line pb-4"><p className="text-lg font-bold text-navy">教材制作室</p><p className="mt-1 text-xs text-muted">問題・模試制作管理</p></div>
+        <div className="card p-6 sm:p-7">
+          <p className="eyebrow">管理者専用</p><h1 className="mt-1.5 text-xl font-bold text-navy">ログイン</h1><p className="mt-2 text-sm leading-relaxed text-muted">登録済みの管理者アカウントを入力してください。</p>
+          {query.error && <div role="alert" className="mt-5 rounded-md border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">メールアドレスまたはパスワードが正しくありません。</div>}
           <form action={loginAction} className="mt-6 space-y-4">
             <input type="hidden" name="next" value={query.next || "/admin"} />
             <div><label className="label" htmlFor="email">メールアドレス</label><input className="input" id="email" name="email" type="email" autoComplete="username" required /></div>

@@ -13,15 +13,15 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
   const [items, query] = await Promise.all([listAdminMaterials(), searchParams]);
   return <>
     <AdminPageHeader
-      eyebrow="MATERIALS"
+      eyebrow="出版管理"
       title="教材管理"
       description={`${items.length}件の教材を管理しています。`}
       action={<div className="flex flex-wrap gap-2"><Link className="btn-secondary" href="/admin/materials/import">CSV一括登録</Link><Link className="btn-primary" href="/admin/materials/new">＋ 新規教材</Link></div>}
     />
     <div className="p-5 sm:p-8">
-      {query.saved && <div className="mb-5 rounded-xl border border-teal-200 bg-teal-50 p-4 text-sm font-semibold text-teal">教材を保存しました。</div>}
-      {query.deleted && <div className="mb-5 rounded-xl border border-teal-200 bg-teal-50 p-4 text-sm font-semibold text-teal">教材を削除しました。</div>}
-      {query.error && <div role="alert" className="mb-5 rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">{query.error}</div>}
+      {query.saved && <div className="mb-5 rounded-md border border-teal-200 bg-teal-50 p-4 text-sm font-semibold text-teal">教材を保存しました。</div>}
+      {query.deleted && <div className="mb-5 rounded-md border border-teal-200 bg-teal-50 p-4 text-sm font-semibold text-teal">教材を削除しました。</div>}
+      {query.error && <div role="alert" className="mb-5 rounded-md border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">{query.error}</div>}
       <div className="card overflow-hidden">
         {items.length ? <div className="overflow-x-auto"><table className="w-full min-w-[900px] text-left text-sm">
           <thead className="bg-surface text-xs text-muted"><tr><th className="px-5 py-3 font-bold">教材</th><th className="px-4 py-3 font-bold">分類</th><th className="px-4 py-3 font-bold">制作状況</th><th className="px-4 py-3 font-bold">KDP</th><th className="px-4 py-3 font-bold">公開</th><th className="px-4 py-3 font-bold">更新日</th><th className="px-5 py-3" /></tr></thead>
@@ -34,7 +34,7 @@ export default async function MaterialsPage({ searchParams }: { searchParams: Pr
             <td className="px-4 py-4 text-xs text-muted">{formatDate(item.updatedAt)}</td>
             <td className="px-5 py-4"><div className="flex items-center justify-end gap-4"><Link className="text-xs font-bold text-brand-blue hover:underline" href={`/admin/materials/${item.id}/edit`}>編集</Link><DeleteMaterialButton id={item.id} title={item.title} /></div></td>
           </tr>)}</tbody>
-        </table></div> : <div className="grid min-h-64 place-items-center p-8 text-center"><div><div className="mx-auto mb-4 grid size-14 place-items-center rounded-2xl bg-surface text-2xl">▤</div><h2 className="font-black text-navy">教材がまだありません</h2><p className="mt-2 text-sm text-muted">個別登録またはCSV一括登録を使用してください。</p><div className="mt-5 flex justify-center gap-2"><Link href="/admin/materials/import" className="btn-secondary">CSV一括登録</Link><Link href="/admin/materials/new" className="btn-primary">教材を登録</Link></div></div></div>}
+        </table></div> : <div className="grid min-h-64 place-items-center p-8 text-center"><div><div className="mx-auto mb-4 grid size-14 place-items-center rounded-lg bg-surface text-2xl">▤</div><h2 className="font-bold text-navy">教材がまだありません</h2><p className="mt-2 text-sm text-muted">個別登録またはCSV一括登録を使用してください。</p><div className="mt-5 flex justify-center gap-2"><Link href="/admin/materials/import" className="btn-secondary">CSV一括登録</Link><Link href="/admin/materials/new" className="btn-primary">教材を登録</Link></div></div></div>}
       </div>
     </div>
   </>;

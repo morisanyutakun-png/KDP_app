@@ -8,5 +8,5 @@ export const dynamic = "force-dynamic";
 
 export default async function NewProblemPage() {
   const subjects = await getSubjects();
-  return <><AdminPageHeader eyebrow="PROBLEM BANK" title="問題を登録" description="原稿はMarkdown＋TeXのまま保存します。" action={<Link className="btn-secondary" href="/admin/problems">一覧へ戻る</Link>} /><div className="workbench"><ProblemForm action={createProblemAction} subjects={subjects} /></div></>;
+  return <><AdminPageHeader eyebrow="問題管理" title="問題を登録" description="原稿はMarkdown＋TeXのまま保存します。" action={<Link className="btn-secondary" href="/admin/problems">一覧へ戻る</Link>} /><div className="workbench"><ProblemForm action={createProblemAction} subjects={subjects} /></div></>;
 }
