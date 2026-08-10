@@ -6,7 +6,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
-import { getMathSubject, getMockCandidates, getMockTemplate } from "@/lib/data/authoring";
+import { parseCandidateFilters, readerFromSearch } from "@/lib/candidate-filters";
+import { getMathSubject, getMockCandidates, getMockTemplate, getUniversityDifficultyProfiles } from "@/lib/data/authoring";
 import { getDb } from "@/lib/db";
 import { changeLogs, defaultPaperSettings, mockExamItems, mockExams, mockTemplates, problems, type PaperSettings } from "@/lib/db/schema";
 
@@ -171,20 +172,6 @@ export async function updateMockSettingsAction(id: string, formData: FormData) {
   revalidatePath(`/admin/print/${id}`);
 }
 
-export async function updateSlotFiltersAction(examId: string, itemId: string, formData: FormData) {
-  await requireAdmin();
-  await getDb().update(mockExamItems).set({
-    fieldFilter: text(formData, "fieldFilter") || null,
-    subfieldFilter: text(formData, "subfieldFilter") || null,
-    difficultyMin: Number(text(formData, "difficultyMin")) || null,
-    difficultyMax: Number(text(formData, "difficultyMax")) || null,
-    unusedOnly: checkbox(formData, "unusedOnly"),
-    updatedAt: new Date(),
-  }).where(and(eq(mockExamItems.id, itemId), eq(mockExamItems.mockExamId, examId)));
-  revalidatePath(`/admin/mocks/${examId}`);
-  redirect(`/admin/mocks/${examId}?slot=${itemId}#workspace`);
-}
-
 // 採用後も候補の絞り込みを保つための引き継ぎ。想定外のクエリは持ち込まない。
 const candidateQueryKeys = [
   "candidateQ",
@@ -299,13 +286,21 @@ export async function removeLastEmptyMockSlotAction(examId: string) {
   revalidatePath("/admin/mocks");
 }
 
-export async function autoAssignEmptySlotsAction(examId: string) {
+// 「この条件で空欄を埋める」。候補リストに出ている条件をそのまま使う。
+export async function autoAssignEmptySlotsAction(examId: string, formData: FormData) {
   await requireAdmin();
   const db = getDb();
-  const items = await db.select().from(mockExamItems).where(eq(mockExamItems.mockExamId, examId));
+  const [items, [exam]] = await Promise.all([
+    db.select().from(mockExamItems).where(eq(mockExamItems.mockExamId, examId)),
+    db.select({ subjectId: mockExams.subjectId }).from(mockExams).where(eq(mockExams.id, examId)).limit(1),
+  ]);
+  const subjectId = exam?.subjectId || (await getMathSubject())?.id;
+  const profiles = subjectId ? await getUniversityDifficultyProfiles(subjectId) : [];
+  const read = readerFromSearch(text(formData, "keepQuery"));
+  const filters = { ...parseCandidateFilters(read, profiles), page: 1, limit: 1 };
   for (const item of items.sort((a, b) => a.position - b.position)) {
     if (item.problemId) continue;
-    const result = await getMockCandidates(examId, item.id, { limit: 1 });
+    const result = await getMockCandidates(examId, item.id, filters);
     const candidate = result?.candidates.rows[0]?.problem;
     if (!candidate) continue;
     await db.update(mockExamItems).set({ problemId: candidate.id, updatedAt: new Date() }).where(eq(mockExamItems.id, item.id));

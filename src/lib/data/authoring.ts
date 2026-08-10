@@ -254,15 +254,11 @@ export async function getMockCandidates(examId: string, itemId: string, extra: P
   const excludeIds = assignedRows
     .filter((row) => row.itemId !== itemId && row.problemId)
     .map((row) => row.problemId!);
+  // 絞り込みは画面に出ている条件だけを使う。隠れた条件で結果が変わらないようにするため。
   const filters: ProblemSearch = {
     ...extra,
     subjectId: extra.subjectId || exam.subjectId || undefined,
-    field: extra.field || slot.fieldFilter || undefined,
-    subfield: extra.subfield || slot.subfieldFilter || undefined,
-    difficultyMin: extra.difficultyMin ?? slot.difficultyMin ?? undefined,
-    difficultyMax: extra.difficultyMax ?? slot.difficultyMax ?? undefined,
     targetUniversity: extra.ignoreExamTarget ? undefined : extra.targetUniversity || exam.targetUniversity || undefined,
-    usage: extra.usage || (slot.unusedOnly ? "unused" : undefined),
     sort: extra.sort || "least-used",
     excludeIds,
     limit: extra.limit || 24,
