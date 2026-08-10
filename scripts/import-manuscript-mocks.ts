@@ -658,7 +658,7 @@ async function projectPayloads(sourceRoot: string, project: Project): Promise<Im
     const answerFiles = filenames.filter((name) => new RegExp(`^set${setNumber}_a[^.]*\\.tex$`).test(name));
     const answerSource = (await Promise.all(answerFiles.map((name) => readFile(path.join(directory, name), "utf8")))).join("\n\n");
     const solutionBlocks = extractSolutionBlocks(answerSource);
-    const solutionsArePending = solutionBlocks.length === 0 && /準備中/.test(answerSource);
+    const solutionsArePending = solutionBlocks.length < questionBlocks.length && /準備中/.test(answerSource);
     if (!questionBlocks.length) {
       throw new Error(`${project.code} set${setNumber}: 問題ブロックを認識できません。`);
     }
