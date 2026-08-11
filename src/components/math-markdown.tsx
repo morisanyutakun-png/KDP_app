@@ -106,12 +106,29 @@ function normalizeDisplayMath(value: string) {
   return repairStrayDisplayMarkers(normalized);
 }
 
+// 数式は改行をまたぐことがある。ここで取りこぼすと下のLaTeX除去に食われて壊れる。
+const mathChunkPattern = /(\$\$[\s\S]*?\$\$|\$[^$]+\$)/g;
+const displayEnvironmentPattern = /\\begin\s*\{(?:cases|dcases|aligned|align|alignat|array|gather|gathered|split|multline|matrix|[pbvBV]matrix|smallmatrix)\*?\}/;
+
+// cases などの複数行環境を含む $…$ は、その場に押し込まず別行立てにする。
+function promoteBlockInlineMath(value: string) {
+  return value.replace(/(?<!\$)\$([^$]+)\$(?!\$)/g, (match, expression: string) => {
+    if (!displayEnvironmentPattern.test(expression) && !/\\\\/.test(expression)) return match;
+    return `\n\n$$\n${expression.trim()}\n$$\n\n`;
+  });
+}
+
 function normalizeLegacyCommands(value: string) {
-  const chunks = value.split(/(\$\$[\s\S]*?\$\$|\$[^$\n]+\$)/g);
+  const chunks = value.split(mathChunkPattern);
   return chunks.map((chunk, index) => {
     if (index % 2 === 1) return chunk;
     return chunk
       .replace(/\\setcounter\s*\{enumi\}\s*\{(\d+)\}\s*(?:1\.[ \t]*)?/g, (_, value: string) => `\n\n${Number(value) + 1}. `)
+      // 目次・相互参照・組版指示は本文に出さない（引数まで消す）。
+      .replace(/\\addcontentsline\s*\{[^{}\n]*\}\s*\{[^{}\n]*\}\s*\{([^{}\n]*)\}/g, "")
+      .replace(/\\(?:setlength|addtolength|settowidth)\s*\{[^{}\n]*\}\s*\{[^{}\n]*\}/g, "")
+      .replace(/\\(?:label|ref|eqref|pageref|cite|index|pagestyle|thispagestyle|markboth|markright|caption\*?)\s*(?:\[[^\]\n]*\])?\s*\{[^{}]*\}/g, "")
+      .replace(/\\(?:phantomsection|clearpage|cleardoublepage|newpage|pagebreak|nopagebreak|linebreak|nolinebreak|maketitle|tableofcontents|frontmatter|mainmatter|backmatter|appendix)\b/g, " ")
       .replace(/\\probpar\b/g, "\n\n")
       .replace(/\\mkc\s*\{([^{}\n]*)\}\s*\{([^{}\n]*)\}\s*\{([^{}\n]*)\}/g, (_, first: string, second: string, third: string) => answerMarker(`${first}${second}${third}`))
       .replace(/\\mkb\s*\{([^{}\n]*)\}\s*\{([^{}\n]*)\}/g, (_, first: string, second: string) => answerMarker(`${first}${second}`))
@@ -154,7 +171,7 @@ export function normalizeMathMarkdownSource(value: string) {
     .replace(/\r\n?/g, "\n")
     .replace(/\\\[([\s\S]*?)\\\]/g, (_, expression: string) => `\n\n$$\n${expression.trim()}\n$$\n\n`)
     .replace(/\\\(([^\n]*?)\\\)/g, (_, expression: string) => `$${expression}$`);
-  return normalizeImportedLists(normalizeLegacyCommands(normalizeDisplayMath(normalizedDelimiters)))
+  return normalizeImportedLists(normalizeLegacyCommands(promoteBlockInlineMath(normalizeDisplayMath(normalizedDelimiters))))
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
@@ -175,8 +192,11 @@ export function MathMarkdown({ source, className = "" }: { source: string; class
             "\\Pt": "\\mathrm{#1}",
             "\\Vec": "\\overrightarrow{\\mathrm{#1}}",
             "\\dsp": "\\displaystyle",
-            "\\Cb": "\\binom{#1}{#2}",
-            "\\Hb": "\\binom{#1+#2-1}{#2}",
+            // 原稿の組合せ記号は nCk 形式。二項係数表記に置き換えると本と字面が変わるため合わせる。
+            "\\Cb": "{}_{#1}\\mathrm{C}_{#2}",
+            "\\Cbp": "\\left({}_{#1}\\mathrm{C}_{#2}\\right)",
+            "\\Pb": "{}_{#1}\\mathrm{P}_{#2}",
+            "\\Hb": "{}_{#1}\\mathrm{H}_{#2}",
             "\\bxn": "\\boxed{#1}",
             "\\slot": "\\boxed{\\mathrm{#1}}",
             "\\blank": "\\boxed{\\phantom{000}}",
@@ -190,6 +210,8 @@ export function MathMarkdown({ source, className = "" }: { source: string; class
             "\\keisan": "\\underbrace{\\hspace{8em}}_{\\text{計算欄}}",
             "\\gcdd": "\\operatorname{gcd}",
             "\\pl": "+",
+            // 原稿の \Ans は数式中では二重下線（最終解答の印）。
+            "\\Ans": "\\underline{\\underline{\\,#1\\,}}",
           },
         }], rehypeSafeKatexErrors]}
         components={{

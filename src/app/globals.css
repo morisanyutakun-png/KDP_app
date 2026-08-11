@@ -268,10 +268,26 @@ details[open] > summary.wb-ghost { background: var(--surface); color: var(--navy
 }
 
 @media print {
-  @page { margin: 0; }
   body { background: #fff !important; }
   .no-print { display: none !important; }
   .print-shell { margin: 0 !important; padding: 0 !important; background: #fff !important; }
   .print-page { box-shadow: none !important; margin: 0 auto !important; }
   .exam-problem-active { outline: none !important; }
+
+  /* 改ページで切れてはいけないもの。見出しだけが取り残されるのも防ぐ。 */
+  .exam-paper { orphans: 3; widows: 3; }
+  .exam-paper h1,
+  .exam-paper h2,
+  .exam-paper h3,
+  .exam-paper h4 { break-inside: avoid; break-after: avoid; }
+  .math-content p,
+  .math-content li { orphans: 2; widows: 2; }
+  .math-content .katex-display,
+  .math-content img,
+  .math-content blockquote,
+  .math-content pre,
+  .math-content table { break-inside: avoid; }
+  /* 解説は1ページに収まらないので、途中で送れるようにしておく。 */
+  .answer-booklet .exam-problem { break-inside: auto; }
+  .exam-paper .paper-edit-control { display: none !important; }
 }
