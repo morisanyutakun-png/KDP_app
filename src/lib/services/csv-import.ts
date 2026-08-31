@@ -90,7 +90,13 @@ export async function importKdpCsv(blobUrl: string, originalFilename: string) {
     if (parsed.errors.length && !parsed.data.length) throw new Error(parsed.errors[0].message);
     const mapping = detectMapping(parsed.meta.fields || []);
     if (!mapping.saleDate || !mapping.units) {
-      throw new Error("日付または販売冊数の列を特定できません。READMEの対応列名を確認してください。");
+      // 教材の一括登録CSVを間違ってここに入れやすいので、見分けて案内する。
+      const headers = (parsed.meta.fields || []).map((header) => header.normalize("NFKC").trim().toLowerCase());
+      const looksLikeMaterialCsv = headers.some((header) => ["タイトル", "title", "商品名", "教材名"].includes(header))
+        && headers.some((header) => ["ページ数", "印刷価格", "販売形式", "シリーズ"].includes(header));
+      throw new Error(looksLikeMaterialCsv
+        ? "これは教材の一括登録CSVです。この画面はKDPの売上レポート専用なので、「出版教材」→「CSV一括登録」から取り込んでください。"
+        : "日付または販売冊数の列を特定できません。READMEの対応列名を確認してください。");
     }
 
     const editions = await db.select({ id: materialEditions.id, asin: materialEditions.asin }).from(materialEditions);
