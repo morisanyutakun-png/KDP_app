@@ -35,7 +35,9 @@ const aliases = {
   difficulty: ["難易度", "difficulty"],
   format: ["販売形式", "形式", "format"],
   amazonUrl: ["amazonurl", "amazon url", "amazon_url", "Amazon URL"],
-  price: ["価格", "price", "amazon価格", "amazonprice"],
+  price: ["価格", "price", "amazon価格", "amazonprice", "販売価格"],
+  pageCount: ["ページ数", "頁数", "pagecount", "pages", "page_count"],
+  printingCost: ["印刷価格", "印刷コスト", "製造コスト", "printingcost", "printing_cost", "manufacturingcost"],
   isPublished: ["公開", "published", "isPublished", "is_published"],
 } as const;
 
@@ -75,6 +77,15 @@ function parseDifficulty(value: string): Difficulty | null {
     all_levels: "ALL_LEVELS", alllevels: "ALL_LEVELS", 全レベル: "ALL_LEVELS",
   };
   return map[normalized] || null;
+}
+
+/** ページ数・印刷価格のような正の整数列を読む。 */
+function parseCount(value: string, label: string) {
+  if (!value) return null;
+  const normalized = value.replace(/[￥¥,\s]/g, "");
+  const count = Number(normalized);
+  if (!Number.isInteger(count) || count < 0) throw new Error(`${label}「${value}」の形式が正しくありません`);
+  return count;
 }
 
 function parseBoolean(value: string) {
@@ -144,6 +155,8 @@ export async function importMaterialsCsv(csv: string, defaults: MaterialCsvDefau
       const normalizedPrice = rawPrice.replace(/[￥¥,\s]/g, "");
       const priceAmount = normalizedPrice ? Number(normalizedPrice) : null;
       if (priceAmount !== null && (!Number.isInteger(priceAmount) || priceAmount < 0)) throw new Error(`価格「${rawPrice}」の形式が正しくありません`);
+      const pageCount = parseCount(field(row, aliases.pageCount), "ページ数");
+      const printingCost = parseCount(field(row, aliases.printingCost), "印刷価格");
 
       let materialId: string | undefined;
       let editionByAsin: typeof materialEditions.$inferSelect | undefined;
@@ -208,7 +221,7 @@ export async function importMaterialsCsv(csv: string, defaults: MaterialCsvDefau
         });
       }
 
-      if (asin || amazonUrl || priceAmount !== null) {
+      if (asin || amazonUrl || priceAmount !== null || pageCount !== null || printingCost !== null) {
         const targetEdition = editionByAsin || editionForFormat;
         if (targetEdition) {
           await db.update(materialEditions).set({
@@ -217,11 +230,13 @@ export async function importMaterialsCsv(csv: string, defaults: MaterialCsvDefau
             priceAmount: priceAmount ?? targetEdition.priceAmount,
             priceCurrency: "JPY",
             priceUpdatedAt: priceAmount === null ? targetEdition.priceUpdatedAt : new Date(),
+            pageCount: pageCount ?? targetEdition.pageCount,
+            printingCost: printingCost ?? targetEdition.printingCost,
             isActive: true,
             updatedAt: new Date(),
           }).where(eq(materialEditions.id, targetEdition.id));
         } else {
-          await db.insert(materialEditions).values({ materialId, format: formatValue, asin: asin || null, amazonUrl: amazonUrl || null, priceAmount, priceCurrency: "JPY", priceUpdatedAt: priceAmount === null ? null : new Date() });
+          await db.insert(materialEditions).values({ materialId, format: formatValue, asin: asin || null, amazonUrl: amazonUrl || null, priceAmount, priceCurrency: "JPY", priceUpdatedAt: priceAmount === null ? null : new Date(), pageCount, printingCost });
         }
       }
 

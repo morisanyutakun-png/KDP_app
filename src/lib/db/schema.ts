@@ -112,6 +112,9 @@ export const materialEditions = pgTable("material_editions", {
   priceAmount: integer("price_amount"),
   priceCurrency: text("price_currency").default("JPY").notNull(),
   priceUpdatedAt: timestamp("price_updated_at", { withTimezone: true }),
+  /** ペーパーバックの本文ページ数と、KDPの印刷コスト（著者負担・円）。 */
+  pageCount: integer("page_count"),
+  printingCost: integer("printing_cost"),
   kdpStatus: kdpStatusEnum("kdp_status").default("DRAFT").notNull(),
   isActive: boolean("is_active").default(true).notNull(),
   ...timestamps,

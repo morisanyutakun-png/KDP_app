@@ -117,6 +117,46 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .admin-shell table th { font-weight: 600; letter-spacing: 0.02em; }
 .admin-shell table tbody tr { transition: background-color 120ms ease; }
 
+/* 商品一覧などの表計算風テーブル。罫線を全セルに引いて数値を追いやすくする。 */
+.sheet { border-collapse: separate; border-spacing: 0; font-size: 12.5px; }
+.sheet th, .sheet td {
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 5px 10px;
+  white-space: nowrap;
+}
+.sheet th:last-child, .sheet td:last-child { border-right: 0; }
+.sheet thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  border-bottom: 1px solid #c3cad4;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.sheet tbody tr:nth-child(even) { background: #fbfbfc; }
+.sheet tbody tr:hover { background: var(--accent-soft); }
+.sheet tbody td { color: var(--ink); }
+.sheet tfoot td {
+  position: sticky;
+  bottom: 0;
+  border-top: 1px solid #c3cad4;
+  border-bottom: 0;
+  background: var(--surface);
+}
+.sheet-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: inherit;
+}
+.sheet-sort:hover { color: var(--navy); }
+.sheet-sort > span { font-size: 9px; opacity: 0.5; }
+.sheet-sort[data-active="true"] { color: var(--navy); font-weight: 700; }
+.sheet-sort[data-active="true"] > span { opacity: 1; }
+
 /* 模試ビルダー（大問レール / 候補リスト / プレビューの3ペイン） */
 .wb-scroll { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 

@@ -43,6 +43,13 @@
       "when": 1786359875510,
       "tag": "0005_first_rictor",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1788186533694,
+      "tag": "0006_normal_hemingway",
+      "breakpoints": true
     }
   ]
 }

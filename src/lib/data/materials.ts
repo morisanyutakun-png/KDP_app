@@ -177,7 +177,10 @@ export async function getHomeData() {
   return { newest: newest.items, featured, all: all.items, total: all.total, ...taxonomies };
 }
 
-export async function listAdminMaterials() {
+export type AdminMaterialSort = "title" | "pages" | "cost" | "price" | "royalty" | "updated";
+
+/** 商品一覧は表計算のように並べ替えたいので、集計値まで含めて1行に畳んで返す。 */
+export async function listAdminMaterials(sort: AdminMaterialSort = "updated", direction: "asc" | "desc" = "desc") {
   const db = getDb();
   const rows = await db.select({ ...baseMaterialSelect(), editionCount: count(materialEditions.id) })
     .from(materials)
@@ -187,14 +190,56 @@ export async function listAdminMaterials() {
     .leftJoin(materialEditions, eq(materialEditions.materialId, materials.id))
     .groupBy(materials.id, universities.id, subjects.id, series.id)
     .orderBy(desc(materials.updatedAt));
-  const editionRows = rows.length ? await db.select({ materialId: materialEditions.materialId, asin: materialEditions.asin })
-    .from(materialEditions)
+  const editionRows = rows.length ? await db.select({
+    materialId: materialEditions.materialId,
+    asin: materialEditions.asin,
+    amazonUrl: materialEditions.amazonUrl,
+    priceAmount: materialEditions.priceAmount,
+    pageCount: materialEditions.pageCount,
+    printingCost: materialEditions.printingCost,
+  }).from(materialEditions)
     .where(inArray(materialEditions.materialId, rows.map((row) => row.id))) : [];
-  return rows.map((row) => ({
-    ...row,
-    asins: editionRows.filter((edition) => edition.materialId === row.id).map((edition) => edition.asin).filter(Boolean),
-  }));
+
+  const items = rows.map((row) => {
+    const editions = editionRows.filter((edition) => edition.materialId === row.id);
+    // ページ数や印刷コストはペーパーバックにしか無いので、値のある版から拾う。
+    const pageCount = editions.find((edition) => edition.pageCount !== null)?.pageCount ?? null;
+    const printingCost = editions.find((edition) => edition.printingCost !== null)?.printingCost ?? null;
+    const priceAmount = editions.find((edition) => edition.priceAmount !== null)?.priceAmount ?? null;
+    return {
+      ...row,
+      asins: editions.map((edition) => edition.asin).filter((asin): asin is string => Boolean(asin)),
+      amazonUrl: editions.find((edition) => edition.amazonUrl)?.amazonUrl ?? null,
+      priceAmount,
+      pageCount,
+      printingCost,
+      // KDPペーパーバックのロイヤリティは 販売価格の60% から印刷コストを引いた額。
+      royalty: priceAmount !== null && printingCost !== null ? Math.floor(priceAmount * 0.6) - printingCost : null,
+    };
+  });
+
+  const value = (item: (typeof items)[number]) => {
+    if (sort === "pages") return item.pageCount;
+    if (sort === "cost") return item.printingCost;
+    if (sort === "price") return item.priceAmount;
+    if (sort === "royalty") return item.royalty;
+    return null;
+  };
+  const sign = direction === "asc" ? 1 : -1;
+  items.sort((a, b) => {
+    if (sort === "title") return sign * a.title.localeCompare(b.title, "ja");
+    if (sort === "updated") return sign * (new Date(a.updatedAt).getTime() - new Date(b.updatedAt).getTime());
+    const left = value(a);
+    const right = value(b);
+    // 未設定は並べ替えの向きに関わらず末尾に置く。
+    if (left === null && right === null) return a.title.localeCompare(b.title, "ja");
+    if (left === null) return 1;
+    if (right === null) return -1;
+    return sign * (left - right);
+  });
+  return items;
 }
+
 
 export async function getAdminMaterial(id: string) {
   const db = getDb();
