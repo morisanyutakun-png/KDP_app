@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq, ne } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import Papa from "papaparse";
 import { getDb } from "@/lib/db";
 import { changeLogs, materialEditions, materials, series, subjects, universities } from "@/lib/db/schema";
@@ -96,29 +96,32 @@ function parseBoolean(value: string) {
   return null;
 }
 
-async function taxonomyId(kind: "university" | "subject" | "series", name: string) {
+/** 分類名からIDを引く。同じ名前が何度も出てくるので取込中はキャッシュする。 */
+async function taxonomyId(kind: "university" | "subject" | "series", name: string, cache: Map<string, string>) {
   if (!name) return null;
+  const cacheKey = `${kind}:${name}`;
+  const cached = cache.get(cacheKey);
+  if (cached) return cached;
   const db = getDb();
   const table = kind === "university" ? universities : kind === "subject" ? subjects : series;
   const [byName] = await db.select({ id: table.id }).from(table).where(eq(table.name, name)).limit(1);
-  if (byName) return byName.id;
+  if (byName) {
+    cache.set(cacheKey, byName.id);
+    return byName.id;
+  }
   const taxonomySlug = slugify(name);
   const [bySlug] = await db.select({ id: table.id }).from(table).where(eq(table.slug, taxonomySlug)).limit(1);
-  if (bySlug) return bySlug.id;
+  if (bySlug) {
+    cache.set(cacheKey, bySlug.id);
+    return bySlug.id;
+  }
   const [created] = await db.insert(table).values({ name, slug: taxonomySlug }).returning({ id: table.id });
+  cache.set(cacheKey, created.id);
   return created.id;
 }
 
-async function materialSlug(title: string, id: string) {
-  const db = getDb();
-  const base = slugify(title);
-  const [collision] = await db.select({ id: materials.id }).from(materials)
-    .where(and(eq(materials.slug, base), ne(materials.id, id))).limit(1);
-  return collision ? `${base}-${id.slice(0, 8)}` : base;
-}
-
 export async function importMaterialsCsv(csv: string, defaults: MaterialCsvDefaults): Promise<MaterialCsvImportResult> {
-  const parsed = Papa.parse<CsvRow>(csv.replace(/^\uFEFF/, ""), {
+  const parsed = Papa.parse<CsvRow>(csv.replace(/^﻿/, ""), {
     header: true,
     skipEmptyLines: "greedy",
   });
@@ -130,6 +133,23 @@ export async function importMaterialsCsv(csv: string, defaults: MaterialCsvDefau
 
   const db = getDb();
   const result: MaterialCsvImportResult = { total: parsed.data.length, created: 0, updated: 0, skipped: 0, errors: [] };
+
+  // 既存データを最初に一括で読み込む。行ごとにDBへ問い合わせると数十件でもタイムアウトするため。
+  const [existingMaterials, existingEditions] = await Promise.all([
+    db.select({ id: materials.id, title: materials.title, slug: materials.slug }).from(materials),
+    db.select().from(materialEditions),
+  ]);
+  const materialIdByTitle = new Map(existingMaterials.map((material) => [material.title, material.id]));
+  const usedSlugs = new Set(existingMaterials.map((material) => material.slug));
+  // 突き合わせに使う項目だけを持つ軽い形にしておくと、取込中に作った版も同じ型で覚えられる。
+  type EditionRef = Pick<(typeof existingEditions)[number],
+    "id" | "materialId" | "format" | "asin" | "amazonUrl" | "priceAmount" | "priceUpdatedAt" | "pageCount" | "printingCost">;
+  const editionByAsin = new Map<string, EditionRef>(existingEditions.filter((edition) => edition.asin).map((edition) => [edition.asin!, edition]));
+  const editionByMaterialFormat = new Map<string, EditionRef>(existingEditions.map((edition) => [`${edition.materialId}:${edition.format}`, edition]));
+  const taxonomyCache = new Map<string, string>();
+
+  type Write = Parameters<typeof db.batch>[0][number];
+  const writes: Write[] = [];
 
   for (const [index, row] of parsed.data.entries()) {
     const rowNumber = index + 2;
@@ -158,41 +178,26 @@ export async function importMaterialsCsv(csv: string, defaults: MaterialCsvDefau
       const pageCount = parseCount(field(row, aliases.pageCount), "ページ数");
       const printingCost = parseCount(field(row, aliases.printingCost), "印刷価格");
 
-      let materialId: string | undefined;
-      let editionByAsin: typeof materialEditions.$inferSelect | undefined;
-      if (asin) {
-        const [byAsin] = await db.select()
-          .from(materialEditions).where(eq(materialEditions.asin, asin)).limit(1);
-        editionByAsin = byAsin;
-        materialId = byAsin?.materialId;
-      }
-      if (!materialId) {
-        const [byTitle] = await db.select({ id: materials.id }).from(materials).where(eq(materials.title, title)).limit(1);
-        materialId = byTitle?.id;
-      }
+      const editionByAsinHit = asin ? editionByAsin.get(asin) : undefined;
+      let materialId = editionByAsinHit?.materialId || materialIdByTitle.get(title);
 
-      let editionForFormat: typeof materialEditions.$inferSelect | undefined;
-      if (materialId && (asin || amazonUrl || priceAmount !== null)) {
-        [editionForFormat] = await db.select().from(materialEditions)
-          .where(and(eq(materialEditions.materialId, materialId), eq(materialEditions.format, formatValue))).limit(1);
-        if (!editionByAsin && editionForFormat?.asin && asin && editionForFormat.asin !== asin) {
-          throw new Error(`${formatValue}形式には別のASINが登録済みです`);
-        }
+      const editionForFormat = materialId ? editionByMaterialFormat.get(`${materialId}:${formatValue}`) : undefined;
+      if (!editionByAsinHit && editionForFormat?.asin && asin && editionForFormat.asin !== asin) {
+        throw new Error(`${formatValue}形式には別のASINが登録済みです`);
       }
 
       const university = field(row, aliases.university);
       const subject = field(row, aliases.subject);
       const seriesName = field(row, aliases.series);
-      const [universityId, subjectId, seriesId] = await Promise.all([
-        university ? taxonomyId("university", university) : null,
-        subject ? taxonomyId("subject", subject) : null,
-        seriesName ? taxonomyId("series", seriesName) : null,
-      ]);
+      const universityId = university ? await taxonomyId("university", university, taxonomyCache) : null;
+      const subjectId = subject ? await taxonomyId("subject", subject, taxonomyCache) : null;
+      const seriesId = seriesName ? await taxonomyId("series", seriesName, taxonomyCache) : null;
 
       const description = field(row, aliases.description);
       const problemStructure = field(row, aliases.problemStructure);
       if (description.length > 10_000) throw new Error("説明は10,000文字以内にしてください");
       if (problemStructure.length > 10_000) throw new Error("問題構成は10,000文字以内にしてください");
+
       let wasCreated = false;
       if (materialId) {
         const update: Partial<typeof materials.$inferInsert> = { title, updatedAt: new Date() };
@@ -203,14 +208,20 @@ export async function importMaterialsCsv(csv: string, defaults: MaterialCsvDefau
         if (seriesId) update.seriesId = seriesId;
         if (difficultyValue) update.difficulty = difficultyValue;
         if (publishedValue !== null) update.isPublished = publishedValue;
-        await db.update(materials).set(update).where(eq(materials.id, materialId));
+        writes.push(db.update(materials).set(update).where(eq(materials.id, materialId)));
+        materialIdByTitle.set(title, materialId);
       } else {
         materialId = crypto.randomUUID();
         wasCreated = true;
-        await db.insert(materials).values({
+        // slugの重複判定も読み込み済みの一覧で行う。
+        const base = slugify(title);
+        const slug = usedSlugs.has(base) ? `${base}-${materialId.slice(0, 8)}` : base;
+        usedSlugs.add(slug);
+        materialIdByTitle.set(title, materialId);
+        writes.push(db.insert(materials).values({
           id: materialId,
           title,
-          slug: await materialSlug(title, materialId),
+          slug,
           description,
           problemStructure: problemStructure || null,
           universityId,
@@ -218,13 +229,13 @@ export async function importMaterialsCsv(csv: string, defaults: MaterialCsvDefau
           seriesId,
           difficulty: difficultyValue || "ALL_LEVELS",
           isPublished: publishedValue ?? defaults.isPublished,
-        });
+        }));
       }
 
       if (asin || amazonUrl || priceAmount !== null || pageCount !== null || printingCost !== null) {
-        const targetEdition = editionByAsin || editionForFormat;
+        const targetEdition = editionByAsinHit || editionForFormat;
         if (targetEdition) {
-          await db.update(materialEditions).set({
+          writes.push(db.update(materialEditions).set({
             asin: asin || targetEdition.asin,
             amazonUrl: amazonUrl || targetEdition.amazonUrl,
             priceAmount: priceAmount ?? targetEdition.priceAmount,
@@ -234,18 +245,33 @@ export async function importMaterialsCsv(csv: string, defaults: MaterialCsvDefau
             printingCost: printingCost ?? targetEdition.printingCost,
             isActive: true,
             updatedAt: new Date(),
-          }).where(eq(materialEditions.id, targetEdition.id));
+          }).where(eq(materialEditions.id, targetEdition.id)));
         } else {
-          await db.insert(materialEditions).values({ materialId, format: formatValue, asin: asin || null, amazonUrl: amazonUrl || null, priceAmount, priceCurrency: "JPY", priceUpdatedAt: priceAmount === null ? null : new Date(), pageCount, printingCost });
+          const edition = {
+            id: crypto.randomUUID(),
+            materialId,
+            format: formatValue,
+            asin: asin || null,
+            amazonUrl: amazonUrl || null,
+            priceAmount,
+            priceCurrency: "JPY",
+            priceUpdatedAt: priceAmount === null ? null : new Date(),
+            pageCount,
+            printingCost,
+          };
+          writes.push(db.insert(materialEditions).values(edition));
+          // 同じCSV内に同じASINや形式の行が続いても取り違えないよう、登録済みとして覚えておく。
+          if (asin) editionByAsin.set(asin, edition);
+          editionByMaterialFormat.set(`${materialId}:${formatValue}`, edition);
         }
       }
 
-      await db.insert(changeLogs).values({
+      writes.push(db.insert(changeLogs).values({
         entityType: "material",
         entityId: materialId,
         action: "csv_imported",
         snapshot: { title, asin: asin || null, row: rowNumber },
-      });
+      }));
       if (wasCreated) result.created++;
       else result.updated++;
     } catch (error) {
@@ -253,6 +279,12 @@ export async function importMaterialsCsv(csv: string, defaults: MaterialCsvDefau
       const message = error instanceof Error ? error.message : "登録できませんでした";
       if (result.errors.length < 10) result.errors.push(`${rowNumber}行目: ${message}`);
     }
+  }
+
+  // まとめて送る。1件ずつawaitすると往復回数が行数×数回になり、実行時間の上限に掛かる。
+  for (let start = 0; start < writes.length; start += 40) {
+    const chunk = writes.slice(start, start + 40) as [Write, ...Write[]];
+    await db.batch(chunk);
   }
   return result;
 }

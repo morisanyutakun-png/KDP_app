@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { importMaterialsCsvAction } from "@/app/admin/actions";
 import { AdminPageHeader } from "@/components/admin-ui";
+import { SubmitButton } from "@/components/submit-button";
 import { formatLabels, formatValues } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
@@ -42,7 +43,7 @@ export default async function MaterialImportPage({ searchParams }: { searchParam
         </div>
         <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
           <a className="text-sm font-bold text-brand-blue hover:underline" href="/material-import-template.csv" download>CSVテンプレートをダウンロード</a>
-          <button className="btn-primary" type="submit">CSVを取り込む</button>
+          <SubmitButton label="CSVを取り込む" pendingLabel="取り込んでいます…" />
         </div>
       </form>
 
